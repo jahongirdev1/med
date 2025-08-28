@@ -98,23 +98,18 @@ const MedicalDevicesCategories = () => {
 
   const handleDelete = async (categoryId: string) => {
     if (!confirm('Вы уверены, что хотите удалить эту категорию?')) return;
-    
+
     try {
       const response = await apiService.deleteCategory(categoryId);
-      if (response.data || !response.error) {
+      if (response.error) {
+        toast({ title: 'Ошибка', description: response.error, variant: 'destructive' });
+      } else {
         await fetchCategories();
-        toast({
-          title: "Категория удалена",
-          description: "Категория успешно удалена",
-        });
+        toast({ title: 'Категория удалена', description: 'Категория успешно удалена' });
       }
     } catch (error) {
       console.error('Error deleting category:', error);
-      toast({
-        title: "Ошибка",
-        description: "Не удалось удалить категорию",
-        variant: "destructive",
-      });
+      toast({ title: 'Ошибка', description: 'Не удалось удалить категорию', variant: 'destructive' });
     }
   };
 

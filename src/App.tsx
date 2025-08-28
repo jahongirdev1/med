@@ -37,6 +37,7 @@ import Dispensing from "@/pages/branch/Dispensing";
 import BranchReports from "@/pages/branch/BranchReports";
 import BranchCalendar from "@/pages/branch/Calendar";
 import BranchMedicalDevices from "@/pages/branch/MedicalDevices";
+import BranchMedicines from "@/pages/branch/Medicines";
 
 import NotFound from "./pages/NotFound";
 
@@ -108,6 +109,7 @@ const App = () => {
             <Route path="/branch/reports" element={<ProtectedRoute requiredRole="branch"><BranchReports /></ProtectedRoute>} />
             <Route path="/branch/calendar" element={<ProtectedRoute requiredRole="branch"><BranchCalendar /></ProtectedRoute>} />
             <Route path="/branch/medical-devices" element={<ProtectedRoute requiredRole="branch"><BranchMedicalDevices /></ProtectedRoute>} />
+            <Route path="/branch/medicines" element={<ProtectedRoute requiredRole="branch"><BranchMedicines /></ProtectedRoute>} />
             
             <Route path="*" element={<NotFound />} />
           </Routes>

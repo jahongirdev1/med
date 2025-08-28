@@ -77,10 +77,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const adminMenuItems = [
     { path: '/admin', icon: Home, label: 'Главная' },
     { path: '/admin/branches', icon: Building2, label: 'Филиалы' },
-    { path: '/admin/medicines', icon: Package, label: 'Лекарства' },
-    { path: '/admin/medical-devices', icon: Package, label: 'ИМН' },
     { path: '/admin/medicine-categories', icon: FileText, label: 'Категории лекарств' },
+    { path: '/admin/medicines', icon: Package, label: 'Лекарства' },
     { path: '/admin/medical-devices-categories', icon: FileText, label: 'Категории ИМН' },
+    { path: '/admin/medical-devices', icon: Package, label: 'ИМН' },
     { path: '/admin/arrivals', icon: Truck, label: 'Поступления' },
     { path: '/admin/shipments', icon: ArrowLeftRight, label: 'Отправки' },
     { path: '/admin/employees', icon: Users, label: 'Сотрудники' },
@@ -94,6 +94,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const branchMenuItems = [
     { path: '/branch', icon: Home, label: 'Главная' },
     { path: '/branch/arrivals', icon: ArrowLeftRight, label: 'Поступления' },
+    { path: '/branch/medicines', icon: Package, label: 'Лекарства' },
     { path: '/branch/medical-devices', icon: Package, label: 'ИМН' },
     { path: '/branch/dispensing', icon: Package, label: 'Выдачи' },
     { path: '/branch/patients', icon: UserCheck, label: 'Пациенты' },
