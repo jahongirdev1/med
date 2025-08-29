@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
 import * as XLSX from 'xlsx';
+import { asArray } from '@/lib/asArray';
 
 const BranchReports: React.FC = () => {
   const currentUser = storage.getCurrentUser();
@@ -22,6 +23,8 @@ const BranchReports: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+
+  const reportDataArr = asArray(reportData);
 
   const reportTypes = [
     { value: 'stock', label: 'Отчет по остаткам', icon: Package },
@@ -59,7 +62,7 @@ const BranchReports: React.FC = () => {
       }
 
       if (response.data) {
-        setReportData(response.data);
+        setReportData(asArray(response.data));
         toast({ title: 'Отчет сформирован успешно' });
       }
     } catch (error) {
@@ -71,13 +74,14 @@ const BranchReports: React.FC = () => {
   };
 
   const exportToExcel = () => {
-    if (reportData.length === 0) {
+    const data = asArray(reportData);
+    if (data.length === 0) {
       toast({ title: 'Нет данных для экспорта', variant: 'destructive' });
       return;
     }
 
     const reportType = reportTypes.find(r => r.value === selectedReportType);
-    const worksheet = XLSX.utils.json_to_sheet(reportData);
+    const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
     
@@ -98,10 +102,11 @@ const BranchReports: React.FC = () => {
   };
 
   const renderReportTable = () => {
-    if (reportData.length === 0) return null;
+    const data = asArray(reportData);
+    if (data.length === 0) return <p className="text-muted-foreground text-sm">Нет данных</p>;
 
-    const columns = Object.keys(reportData[0]);
-    
+    const columns = Object.keys(data[0]);
+
     return (
       <Table>
         <TableHeader>
@@ -115,12 +120,12 @@ const BranchReports: React.FC = () => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {reportData.map((item, index) => (
+          {data.map((item, index) => (
             <TableRow key={index}>
               {columns.map((column) => (
                 <TableCell key={column}>
-                  {typeof item[column] === 'object' ? 
-                    JSON.stringify(item[column]) : 
+                  {typeof item[column] === 'object' ?
+                    JSON.stringify(item[column]) :
                     String(item[column] || '-')
                   }
                 </TableCell>
@@ -197,7 +202,7 @@ const BranchReports: React.FC = () => {
             <Button onClick={generateReport} disabled={loading || !selectedReportType}>
               {loading ? 'Формируется...' : 'Сформировать отчет'}
             </Button>
-            <Button variant="outline" onClick={exportToExcel} disabled={reportData.length === 0}>
+            <Button variant="outline" onClick={exportToExcel} disabled={asArray(reportData).length === 0}>
               <Download className="h-4 w-4 mr-2" />
               Экспорт в Excel
             </Button>
@@ -205,14 +210,14 @@ const BranchReports: React.FC = () => {
         </CardContent>
       </Card>
 
-      {reportData.length > 0 && (
+      {reportDataArr.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               {React.createElement(getReportIcon(selectedReportType), { className: "h-5 w-5 mr-2" })}
               {reportTypes.find(r => r.value === selectedReportType)?.label}
               <span className="ml-2 text-sm font-normal text-muted-foreground">
-                ({reportData.length} записей)
+              ({reportDataArr.length} записей)
               </span>
             </CardTitle>
           </CardHeader>
@@ -222,7 +227,7 @@ const BranchReports: React.FC = () => {
         </Card>
       )}
 
-      {reportData.length === 0 && selectedReportType && !loading && (
+      {reportDataArr.length === 0 && selectedReportType && !loading && (
         <Card>
           <CardContent className="text-center py-8">
             <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />

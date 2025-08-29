@@ -4,6 +4,7 @@ import { storage } from '@/utils/storage';
 import { apiService } from '@/utils/api';
 import { Package, Users, UserCheck, ArrowLeftRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { asArray } from '@/lib/asArray';
 
 const BranchDashboard: React.FC = () => {
   const currentUser = storage.getCurrentUser();
@@ -35,13 +36,13 @@ const BranchDashboard: React.FC = () => {
         apiService.getNotifications(branchId)
       ]);
 
-      if (medicinesRes.data) setMedicines(medicinesRes.data);
-      if (devicesRes.data) setDevices(devicesRes.data);
-      if (employeesRes.data) setEmployees(employeesRes.data);
-      if (patientsRes.data) setPatients(patientsRes.data);
-      if (dispensingsRes.data) setDispensings(dispensingsRes.data);
-      if (shipmentsRes.data) setShipments(shipmentsRes.data);
-      if (notificationsRes.data) setNotifications(notificationsRes.data);
+      if (medicinesRes.data) setMedicines(asArray(medicinesRes.data));
+      if (devicesRes.data) setDevices(asArray(devicesRes.data));
+      if (employeesRes.data) setEmployees(asArray(employeesRes.data));
+      if (patientsRes.data) setPatients(asArray(patientsRes.data));
+      if (dispensingsRes.data) setDispensings(asArray(dispensingsRes.data));
+      if (shipmentsRes.data) setShipments(asArray(shipmentsRes.data));
+      if (notificationsRes.data) setNotifications(asArray(notificationsRes.data));
     } catch (error) {
       console.error('Error fetching branch data:', error);
     } finally {
@@ -53,11 +54,19 @@ const BranchDashboard: React.FC = () => {
     return <div className="flex justify-center items-center h-64">Загрузка...</div>;
   }
 
-  const totalMedicines = medicines.reduce((sum, med) => sum + med.quantity, 0);
-  const totalDevices = devices.reduce((sum, dev) => sum + dev.quantity, 0);
-  const totalDispensed = dispensings.reduce((sum, disp) => sum + disp.quantity, 0);
-  const hasPendingShipments = shipments.some((s) => s.status === 'pending');
-  const hasUnreadNotifications = notifications.some((n: any) => !n.is_read);
+  const medsArr = asArray(medicines);
+  const devsArr = asArray(devices);
+  const employeesArr = asArray(employees);
+  const patientsArr = asArray(patients);
+  const dispArr = asArray(dispensings);
+  const shipArr = asArray(shipments);
+  const notifArr = asArray(notifications);
+
+  const totalMedicines = medsArr.reduce((sum, m) => sum + (Number(m.quantity) || 0), 0);
+  const totalDevices = devsArr.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0);
+  const totalDispensed = dispArr.reduce((sum, disp) => sum + (Number(disp.quantity) || 0), 0);
+  const hasPendingShipments = shipArr.some((s) => s?.status === 'pending');
+  const hasUnreadNotifications = notifArr.some((n: any) => !n?.is_read);
 
   const stats = [
     {
@@ -74,13 +83,13 @@ const BranchDashboard: React.FC = () => {
     },
     {
       title: 'Сотрудники',
-      value: employees.length,
+      value: employeesArr.length,
       icon: Users,
       color: 'bg-green-500'
     },
     {
       title: 'Пациенты',
-      value: patients.length,
+      value: patientsArr.length,
       icon: UserCheck,
       color: 'bg-purple-500'
     },
@@ -132,9 +141,9 @@ const BranchDashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Лекарства в наличии</h3>
-          {medicines.length > 0 ? (
+          {medsArr.length > 0 ? (
             <div className="space-y-3">
-              {medicines.slice(0, 5).map((medicine) => (
+              {medsArr.slice(0, 5).map((medicine) => (
                 <div key={medicine.id} className="flex items-center justify-between p-3 bg-gray-50 rounded">
                   <span className="font-medium">{medicine.name}</span>
                   <span className={`px-2 py-1 rounded text-sm ${
@@ -154,9 +163,9 @@ const BranchDashboard: React.FC = () => {
 
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Последние выдачи</h3>
-          {dispensings.length > 0 ? (
+          {dispArr.length > 0 ? (
             <div className="space-y-3">
-              {dispensings.slice(-5).map((dispensing) => (
+              {dispArr.slice(-5).map((dispensing) => (
                 <div key={dispensing.id} className="p-3 bg-gray-50 rounded">
                   <div className="flex justify-between items-start">
                     <div>
