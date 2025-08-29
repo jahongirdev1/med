@@ -8,6 +8,7 @@ interface LoginData {
 interface ApiResponse<T> {
   data?: T;
   error?: string;
+  status?: number;
 }
 
 class ApiService {
@@ -26,14 +27,19 @@ class ApiService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        const err: any = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        err.status = response.status;
+        throw err;
       }
 
       const data = await response.json();
-      return { data };
+      return { data, status: response.status };
     } catch (error) {
       console.error(`API Error (${endpoint}):`, error);
-      return { error: error instanceof Error ? error.message : 'Unknown error' };
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        status: (error as any)?.status,
+      };
     }
   }
 
