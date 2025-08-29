@@ -2,64 +2,65 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from sqlalchemy import inspect
-from database import get_db, create_tables, engine, User as DBUser, Branch as DBBranch, Medicine as DBMedicine, Employee as DBEmployee, Patient as DBPatient, Transfer as DBTransfer, DispensingRecord as DBDispensingRecord, DispensingItem as DBDispensingItem, Arrival as DBArrival, Category as DBCategory, MedicalDevice as DBMedicalDevice, Shipment as DBShipment, ShipmentItem as DBShipmentItem, Notification as DBNotification
+from database import get_db, create_tables, engine, User as DBUser, Branch as DBBranch, Medicine as DBMedicine, Employee as DBEmployee, Patient as DBPatient, Transfer as DBTransfer, DispensingRecord as DBDispensingRecord, DispensingItem as DBDispensingItem, Arrival as DBArrival, DeviceArrival as DBDeviceArrival, Category as DBCategory, MedicalDevice as DBMedicalDevice, Shipment as DBShipment, ShipmentItem as DBShipmentItem, Notification as DBNotification
 from schemas import *
 from typing import List, Optional
 from datetime import datetime
 import uuid
 import json
 
-def ensure_schema_patches():
+
+def ensure_schema_patches(default_med_cat_id: str):
+    """Apply idempotent schema changes and ensure data consistency."""
     with engine.begin() as conn:
-        insp = inspect(conn)
+        # medicines.category_id
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medicines ADD COLUMN IF NOT EXISTS category_id varchar"
+        )
+        conn.exec_driver_sql(
+            "UPDATE public.medicines SET category_id = :cid WHERE category_id IS NULL",
+            {"cid": default_med_cat_id},
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medicines DROP CONSTRAINT IF EXISTS fk_medicines_category"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medicines ADD CONSTRAINT fk_medicines_category FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE RESTRICT"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medicines ALTER COLUMN category_id SET NOT NULL"
+        )
 
-        cols_meds = [c["name"] for c in insp.get_columns("medicines")]
-        if "category_id" not in cols_meds:
-            conn.exec_driver_sql(
-                "ALTER TABLE public.medicines ADD COLUMN category_id varchar"
+        # medical_devices.category_id
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medical_devices DROP CONSTRAINT IF EXISTS medical_devices_category_id_fkey"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medical_devices DROP CONSTRAINT IF EXISTS fk_medical_devices_category"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medical_devices ADD CONSTRAINT fk_medical_devices_category FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE RESTRICT"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE public.medical_devices ALTER COLUMN category_id SET NOT NULL"
+        )
+
+        # device_arrivals table
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS public.device_arrivals (
+              id varchar PRIMARY KEY,
+              device_id varchar NOT NULL,
+              device_name varchar NOT NULL,
+              quantity integer NOT NULL,
+              purchase_price double precision NOT NULL,
+              sell_price double precision NOT NULL,
+              date timestamp without time zone DEFAULT NOW()
             )
-
-        conn.exec_driver_sql(
             """
-        DO $$
-        BEGIN
-          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_medicines_category') THEN
-            ALTER TABLE public.medicines DROP CONSTRAINT fk_medicines_category;
-          END IF;
-        END $$;
-        """
         )
 
-        conn.exec_driver_sql(
-            """
-        ALTER TABLE public.medicines
-          ADD CONSTRAINT fk_medicines_category
-          FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE SET NULL;
-        """
-        )
-
-        conn.exec_driver_sql(
-            """
-        ALTER TABLE public.medical_devices
-          DROP CONSTRAINT IF EXISTS medical_devices_category_id_fkey;
-        """
-        )
-        conn.exec_driver_sql(
-            """
-        ALTER TABLE public.medical_devices
-          DROP CONSTRAINT IF EXISTS fk_medical_devices_category;
-        """
-        )
-
-        conn.exec_driver_sql(
-            """
-        ALTER TABLE public.medical_devices
-          ADD CONSTRAINT fk_medical_devices_category
-          FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE RESTRICT;
-        """
-        )
-
+        # useful indexes
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS idx_categories_type ON public.categories(type);"
         )
@@ -69,31 +70,6 @@ def ensure_schema_patches():
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS idx_dev_category_id ON public.medical_devices(category_id);"
         )
-
-def ensure_medicines_category_fk():
-    inspector = inspect(engine)
-    columns = [c["name"] for c in inspector.get_columns("medicines")]
-    fks = [fk["name"] for fk in inspector.get_foreign_keys("medicines")]
-
-    with engine.begin() as conn:
-        if "category_id" not in columns:
-            conn.exec_driver_sql("ALTER TABLE medicines ADD COLUMN category_id VARCHAR")
-        if "fk_medicines_category" not in fks:
-            conn.exec_driver_sql(
-                "ALTER TABLE medicines ADD CONSTRAINT fk_medicines_category FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE SET NULL"
-            )
-        missing = conn.exec_driver_sql(
-            "SELECT 1 FROM medicines WHERE category_id IS NULL LIMIT 1"
-        ).first()
-        if missing:
-            cat = conn.exec_driver_sql(
-                "SELECT id FROM categories WHERE type='medicine' LIMIT 1"
-            ).first()
-            if cat:
-                conn.exec_driver_sql(
-                    "UPDATE medicines SET category_id = :cid WHERE category_id IS NULL",
-                    {"cid": cat[0]},
-                )
 
 
 # Create FastAPI app
@@ -148,19 +124,8 @@ async def startup_event():
         
     db.commit()
 
-    ensure_medicines_category_fk()
-    ensure_schema_patches()
-    # Ensure all existing medicines have a valid category and enforce NOT NULL constraint
-    try:
-        db.execute(
-            text("UPDATE medicines SET category_id = :cat WHERE category_id IS NULL"),
-            {"cat": medicine_category.id},
-        )
-        db.commit()
-        db.execute(text("ALTER TABLE medicines ALTER COLUMN category_id SET NOT NULL"))
-        db.commit()
-    except Exception:
-        db.rollback()
+    # Apply schema patches and constraints
+    ensure_schema_patches(medicine_category.id)
 
 # Auth endpoints
 @app.post("/auth/login", response_model=LoginResponse)
@@ -333,7 +298,7 @@ async def update_medicine(medicine_id: str, medicine: MedicineUpdate, db: Sessio
         raise HTTPException(status_code=404, detail="Medicine not found")
 
     category_id = medicine.category_id if medicine.category_id is not None else db_medicine.category_id
-    cat = db.query(DBCategory).filter(DBCategory.id == medicine.category_id).first()
+    cat = db.query(DBCategory).filter(DBCategory.id == category_id).first()
     if not cat:
         raise HTTPException(status_code=400, detail="Category not found")
     if cat.type != "medicine":
@@ -395,7 +360,7 @@ async def update_medical_device(device_id: str, device: MedicalDeviceUpdate, db:
         raise HTTPException(status_code=404, detail="Medical device not found")
 
     category_id = device.category_id if device.category_id is not None else db_device.category_id
-    cat = db.query(DBCategory).filter(DBCategory.id == device.category_id).first()
+    cat = db.query(DBCategory).filter(DBCategory.id == category_id).first()
     if not cat:
         raise HTTPException(status_code=400, detail="Category not found")
     if cat.type != "medical_device":
@@ -460,7 +425,16 @@ async def delete_category(category_id: str, db: Session = Depends(get_db)):
     category = db.query(DBCategory).filter(DBCategory.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
-    
+
+    if category.type == "medicine":
+        count = db.query(DBMedicine).filter(DBMedicine.category_id == category_id).count()
+        if count > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete: category has medicines")
+    elif category.type == "medical_device":
+        count = db.query(DBMedicalDevice).filter(DBMedicalDevice.category_id == category_id).count()
+        if count > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete: category has medical devices")
+
     db.delete(category)
     db.commit()
     return {"message": "Category deleted"}
@@ -1022,6 +996,42 @@ async def create_arrivals(batch: BatchArrivalCreate, db: Session = Depends(get_d
         
         db.commit()
         return {"message": "Arrivals created successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/device_arrivals")
+async def get_device_arrivals(db: Session = Depends(get_db)):
+    arrivals = db.query(DBDeviceArrival).all()
+    return {"data": [DeviceArrival.model_validate(a) for a in arrivals]}
+
+
+@app.post("/device_arrivals")
+async def create_device_arrivals(batch: BatchDeviceArrivalCreate, db: Session = Depends(get_db)):
+    try:
+        for arrival_data in batch.arrivals:
+            db_arrival = DBDeviceArrival(
+                id=str(uuid.uuid4()),
+                device_id=arrival_data.device_id,
+                device_name=arrival_data.device_name,
+                quantity=arrival_data.quantity,
+                purchase_price=arrival_data.purchase_price,
+                sell_price=arrival_data.sell_price,
+            )
+            db.add(db_arrival)
+
+            device = db.query(DBMedicalDevice).filter(
+                DBMedicalDevice.id == arrival_data.device_id,
+                DBMedicalDevice.branch_id.is_(None),
+            ).first()
+            if device:
+                device.quantity += arrival_data.quantity
+                device.purchase_price = arrival_data.purchase_price
+                device.sell_price = arrival_data.sell_price
+
+        db.commit()
+        return {"message": "Device arrivals created successfully"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))

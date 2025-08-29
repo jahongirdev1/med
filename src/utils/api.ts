@@ -208,6 +208,18 @@ class ApiService {
     });
   }
 
+  // Device arrivals
+  async getDeviceArrivals() {
+    return this.request<any[]>('/device_arrivals');
+  }
+
+  async createDeviceArrivals(arrivals: any[]) {
+    return this.request<any>('/device_arrivals', {
+      method: 'POST',
+      body: JSON.stringify({ arrivals }),
+    });
+  }
+
   // Medical Device Categories (proxy to categories API)
   async getMedicalDeviceCategories() {
     // Use unified categories endpoint

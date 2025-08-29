@@ -109,6 +109,18 @@ class Arrival(Base):
     sell_price = Column(Float, nullable=False)
     date = Column(DateTime, default=datetime.utcnow)
 
+
+class DeviceArrival(Base):
+    __tablename__ = "device_arrivals"
+
+    id = Column(String, primary_key=True)
+    device_id = Column(String, nullable=False)
+    device_name = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    purchase_price = Column(Float, nullable=False)
+    sell_price = Column(Float, nullable=False)
+    date = Column(DateTime, default=datetime.utcnow)
+
 class Category(Base):
     __tablename__ = "categories"
     

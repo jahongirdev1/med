@@ -188,6 +188,30 @@ class BatchDispensingCreate(BaseModel):
 class BatchArrivalCreate(BaseModel):
     arrivals: List[ArrivalCreate]
 
+
+# Device arrivals
+class DeviceArrivalBase(BaseModel):
+    device_id: str
+    device_name: str
+    quantity: int
+    purchase_price: float
+    sell_price: float
+
+
+class DeviceArrivalCreate(DeviceArrivalBase):
+    pass
+
+
+class DeviceArrival(DeviceArrivalBase):
+    id: str
+    date: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BatchDeviceArrivalCreate(BaseModel):
+    arrivals: List[DeviceArrivalCreate]
+
 # Medical Device Category schemas
 class MedicalDeviceCategoryBase(BaseModel):
     name: str
