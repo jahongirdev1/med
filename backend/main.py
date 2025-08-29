@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import inspect, select, update, MetaData, Table
 from database import get_db, create_tables, engine, User as DBUser, Branch as DBBranch, Medicine as DBMedicine, Employee as DBEmployee, Patient as DBPatient, Transfer as DBTransfer, DispensingRecord as DBDispensingRecord, DispensingItem as DBDispensingItem, Arrival as DBArrival, DeviceArrival as DBDeviceArrival, Category as DBCategory, MedicalDevice as DBMedicalDevice, Shipment as DBShipment, ShipmentItem as DBShipmentItem, Notification as DBNotification
 from schemas import *
 from typing import List, Optional
@@ -10,39 +10,56 @@ import uuid
 import json
 
 
-def ensure_schema_patches(default_med_cat_id: str):
+def ensure_schema_patches():
     """Apply idempotent schema changes and ensure data consistency."""
     with engine.begin() as conn:
-        # medicines.category_id
+        insp = inspect(conn)
+
+        # --- 1) DDL: columns / constraints ---
+
+        # 1a) medicines.category_id column
+        med_cols = [c["name"] for c in insp.get_columns("medicines")]
+        if "category_id" not in med_cols:
+            conn.exec_driver_sql("ALTER TABLE public.medicines ADD COLUMN category_id varchar")
+
+        # 1b) Medicines FK -> categories(id) (drop old, then create)
         conn.exec_driver_sql(
-            "ALTER TABLE public.medicines ADD COLUMN IF NOT EXISTS category_id varchar"
+            """
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_medicines_category') THEN
+            ALTER TABLE public.medicines DROP CONSTRAINT fk_medicines_category;
+          END IF;
+        END $$;
+        """
         )
         conn.exec_driver_sql(
-            "UPDATE public.medicines SET category_id = :cid WHERE category_id IS NULL",
-            {"cid": default_med_cat_id},
-        )
-        conn.exec_driver_sql(
-            "ALTER TABLE public.medicines DROP CONSTRAINT IF EXISTS fk_medicines_category"
-        )
-        conn.exec_driver_sql(
-            "ALTER TABLE public.medicines ADD CONSTRAINT fk_medicines_category FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE RESTRICT"
-        )
-        conn.exec_driver_sql(
-            "ALTER TABLE public.medicines ALTER COLUMN category_id SET NOT NULL"
+            """
+        ALTER TABLE public.medicines
+          ADD CONSTRAINT fk_medicines_category
+          FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE SET NULL;
+        """
         )
 
-        # medical_devices.category_id
+        # 1c) Medical devices FK -> categories(id) (drop legacy FK if any)
         conn.exec_driver_sql(
-            "ALTER TABLE public.medical_devices DROP CONSTRAINT IF EXISTS medical_devices_category_id_fkey"
+            """
+        ALTER TABLE public.medical_devices
+          DROP CONSTRAINT IF EXISTS medical_devices_category_id_fkey;
+        """
         )
         conn.exec_driver_sql(
-            "ALTER TABLE public.medical_devices DROP CONSTRAINT IF EXISTS fk_medical_devices_category"
+            """
+        ALTER TABLE public.medical_devices
+          DROP CONSTRAINT IF EXISTS fk_medical_devices_category;
+        """
         )
         conn.exec_driver_sql(
-            "ALTER TABLE public.medical_devices ADD CONSTRAINT fk_medical_devices_category FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE RESTRICT"
-        )
-        conn.exec_driver_sql(
-            "ALTER TABLE public.medical_devices ALTER COLUMN category_id SET NOT NULL"
+            """
+        ALTER TABLE public.medical_devices
+          ADD CONSTRAINT fk_medical_devices_category
+          FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE RESTRICT;
+        """
         )
 
         # device_arrivals table
@@ -60,16 +77,48 @@ def ensure_schema_patches(default_med_cat_id: str):
             """
         )
 
-        # useful indexes
-        conn.exec_driver_sql(
-            "CREATE INDEX IF NOT EXISTS idx_categories_type ON public.categories(type);"
-        )
-        conn.exec_driver_sql(
-            "CREATE INDEX IF NOT EXISTS idx_med_category_id ON public.medicines(category_id);"
-        )
-        conn.exec_driver_sql(
-            "CREATE INDEX IF NOT EXISTS idx_dev_category_id ON public.medical_devices(category_id);"
-        )
+        # helpful indexes
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_categories_type ON public.categories(type);")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_med_category_id ON public.medicines(category_id);")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_dev_category_id ON public.medical_devices(category_id);")
+
+        # --- 2) DML: backfill using SQLAlchemy Core (no raw placeholders) ---
+
+        md = MetaData()
+        categories = Table("categories", md, autoload_with=engine)
+        medicines = Table("medicines", md, autoload_with=engine)
+        devices = Table("medical_devices", md, autoload_with=engine)
+
+        # 2a) pick a default category for medicines
+        default_med_cat_id = conn.execute(
+            select(categories.c.id)
+            .where(categories.c.type == "medicine")
+            .order_by(categories.c.name)
+            .limit(1)
+        ).scalar_one_or_none()
+
+        if default_med_cat_id is not None and "category_id" in med_cols:
+            conn.execute(
+                update(medicines)
+                .where(medicines.c.category_id.is_(None))
+                .values(category_id=default_med_cat_id)
+            )
+
+        # 2b) backfill medical_devices.category_id if needed
+        default_dev_cat_id = conn.execute(
+            select(categories.c.id)
+            .where(categories.c.type == "medical_device")
+            .order_by(categories.c.name)
+            .limit(1)
+        ).scalar_one_or_none()
+
+        dev_cols = [c["name"] for c in insp.get_columns("medical_devices")]
+        if default_dev_cat_id is not None and "category_id" in dev_cols:
+            conn.execute(
+                update(devices)
+                .where(devices.c.category_id.is_(None))
+                .values(category_id=default_dev_cat_id)
+            )
 
 
 # Create FastAPI app
@@ -125,7 +174,7 @@ async def startup_event():
     db.commit()
 
     # Apply schema patches and constraints
-    ensure_schema_patches(medicine_category.id)
+    ensure_schema_patches()
 
 # Auth endpoints
 @app.post("/auth/login", response_model=LoginResponse)
