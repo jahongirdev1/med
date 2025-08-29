@@ -59,14 +59,15 @@ const BranchDashboard: React.FC = () => {
   const employeesArr = asArray(employees);
   const patientsArr = asArray(patients);
   const dispArr = asArray(dispensings);
-  const shipArr = asArray(shipments);
-  const notifArr = asArray(notifications);
+  const shipmentsArr = asArray(shipments);
+  const notificationsArr = asArray(notifications);
 
   const totalMedicines = medsArr.reduce((sum, m) => sum + (Number(m.quantity) || 0), 0);
   const totalDevices = devsArr.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0);
   const totalDispensed = dispArr.reduce((sum, disp) => sum + (Number(disp.quantity) || 0), 0);
-  const hasPendingShipments = shipArr.some((s) => s?.status === 'pending');
-  const hasUnreadNotifications = notifArr.some((n: any) => !n?.is_read);
+  const hasPendingShipments = shipmentsArr.some((s) => s?.status === 'pending');
+  const hasUnreadNotifications = notificationsArr.some((n: any) => !n?.is_read);
+  const showBanner = hasPendingShipments || hasUnreadNotifications;
 
   const stats = [
     {
@@ -108,7 +109,7 @@ const BranchDashboard: React.FC = () => {
         <p className="text-gray-600 mt-2">Панель управления филиалом</p>
       </div>
 
-      {(hasPendingShipments || hasUnreadNotifications) && (
+      {showBanner && (
         <div
           className="mb-8 p-4 bg-yellow-100 text-yellow-800 rounded cursor-pointer"
           onClick={() => navigate(hasPendingShipments ? '/branch/arrivals' : '/branch/notifications')}

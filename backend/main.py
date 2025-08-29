@@ -77,6 +77,13 @@ def ensure_schema_patches():
             """
         )
 
+        # shipments.accepted_at column
+        ship_cols = [c["name"] for c in insp.get_columns("shipments")]
+        if "accepted_at" not in ship_cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE public.shipments ADD COLUMN accepted_at timestamp"
+            )
+
         # helpful indexes
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_categories_type ON public.categories(type);")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_med_category_id ON public.medicines(category_id);")
@@ -665,38 +672,40 @@ async def get_shipments(branch_id: Optional[str] = None, db: Session = Depends(g
         shipments = db.query(DBShipment).filter(DBShipment.to_branch_id == branch_id).all()
     else:
         shipments = db.query(DBShipment).all()
-    
+
     result = []
     for shipment in shipments:
-        # Get shipment items
         items = db.query(DBShipmentItem).filter(DBShipmentItem.shipment_id == shipment.id).all()
-        
+        out_items = []
+        for it in items:
+            if it.item_type == "medicine":
+                med = db.query(DBMedicine).get(it.item_id)
+                out_items.append({
+                    "type": "medicine",
+                    "id": it.item_id,
+                    "name": med.name if med else it.item_name,
+                    "quantity": it.quantity,
+                })
+            else:
+                dev = db.query(DBMedicalDevice).get(it.item_id)
+                out_items.append({
+                    "type": "medical_device",
+                    "id": it.item_id,
+                    "name": dev.name if dev else it.item_name,
+                    "quantity": it.quantity,
+                })
+
         shipment_data = {
             "id": shipment.id,
             "to_branch_id": shipment.to_branch_id,
             "status": shipment.status,
             "rejection_reason": shipment.rejection_reason,
             "created_at": shipment.created_at.isoformat(),
-            "medicines": [],
-            "medical_devices": []
+            "accepted_at": shipment.accepted_at.isoformat() if shipment.accepted_at else None,
+            "items": out_items,
         }
-        
-        for item in items:
-            if item.item_type == "medicine":
-                shipment_data["medicines"].append({
-                    "medicine_id": item.item_id,
-                    "name": item.item_name,
-                    "quantity": item.quantity
-                })
-            else:
-                shipment_data["medical_devices"].append({
-                    "device_id": item.item_id,
-                    "name": item.item_name,
-                    "quantity": item.quantity
-                })
-        
         result.append(shipment_data)
-    
+
     return {"data": result}
 
 @app.post("/shipments")
@@ -774,30 +783,29 @@ async def create_shipment(shipment_data: dict, db: Session = Depends(get_db)):
 
 @app.post("/shipments/{shipment_id}/accept")
 async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
+    shipment = db.query(DBShipment).filter(DBShipment.id == shipment_id).first()
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    if shipment.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already processed")
+
     try:
-        shipment = db.query(DBShipment).filter(DBShipment.id == shipment_id).first()
-        if not shipment:
-            raise HTTPException(status_code=404, detail="Shipment not found")
-        
-        # Get shipment items
         items = db.query(DBShipmentItem).filter(DBShipmentItem.shipment_id == shipment_id).all()
-        
+        out_items = []
         for item in items:
             if item.item_type == "medicine":
-                # Decrease main warehouse quantity
                 main_medicine = db.query(DBMedicine).filter(
                     DBMedicine.id == item.item_id,
                     DBMedicine.branch_id.is_(None)
                 ).first()
                 if main_medicine:
                     main_medicine.quantity -= item.quantity
-                
-                # Add to branch
+
                 branch_medicine = db.query(DBMedicine).filter(
                     DBMedicine.name == item.item_name,
                     DBMedicine.branch_id == shipment.to_branch_id
                 ).first()
-                
+
                 if branch_medicine:
                     branch_medicine.quantity += item.quantity
                 else:
@@ -811,22 +819,27 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
                         branch_id=shipment.to_branch_id
                     )
                     db.add(new_medicine)
-            
-            elif item.item_type == "medical_device":
-                # Decrease main warehouse quantity
+
+                out_items.append({
+                    "type": "medicine",
+                    "id": item.item_id,
+                    "name": main_medicine.name if main_medicine else item.item_name,
+                    "quantity": item.quantity,
+                })
+
+            else:
                 main_device = db.query(DBMedicalDevice).filter(
                     DBMedicalDevice.id == item.item_id,
                     DBMedicalDevice.branch_id.is_(None)
                 ).first()
                 if main_device:
                     main_device.quantity -= item.quantity
-                
-                # Add to branch
+
                 branch_device = db.query(DBMedicalDevice).filter(
                     DBMedicalDevice.name == item.item_name,
                     DBMedicalDevice.branch_id == shipment.to_branch_id
                 ).first()
-                
+
                 if branch_device:
                     branch_device.quantity += item.quantity
                 else:
@@ -840,10 +853,27 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
                         branch_id=shipment.to_branch_id
                     )
                     db.add(new_device)
-        
+
+                out_items.append({
+                    "type": "medical_device",
+                    "id": item.item_id,
+                    "name": main_device.name if main_device else item.item_name,
+                    "quantity": item.quantity,
+                })
+
         shipment.status = "accepted"
+        shipment.accepted_at = datetime.utcnow()
         db.commit()
-        return {"message": "Shipment accepted"}
+
+        return {
+            "id": shipment.id,
+            "to_branch_id": shipment.to_branch_id,
+            "status": shipment.status,
+            "rejection_reason": shipment.rejection_reason,
+            "created_at": shipment.created_at.isoformat(),
+            "accepted_at": shipment.accepted_at.isoformat() if shipment.accepted_at else None,
+            "items": out_items,
+        }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
