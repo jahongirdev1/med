@@ -388,12 +388,13 @@ async def create_medical_device(device: MedicalDeviceCreate, db: Session = Depen
         raise HTTPException(status_code=400, detail="Invalid category for medical device")
 
     device_id = str(uuid.uuid4())
+    sell_price = device.sell_price if device.sell_price is not None else 0
     db_device = DBMedicalDevice(
         id=device_id,
         name=device.name,
         category_id=device.category_id,
         purchase_price=device.purchase_price,
-        sell_price=device.sell_price,
+        sell_price=sell_price,
         quantity=device.quantity,
         branch_id=device.branch_id,
     )
@@ -415,7 +416,12 @@ async def update_medical_device(device_id: str, device: MedicalDeviceUpdate, db:
     if cat.type != "medical_device":
         raise HTTPException(status_code=400, detail="Invalid category for medical device")
 
-    for field, value in device.model_dump(exclude_unset=True).items():
+    update_data = device.model_dump(exclude_unset=True)
+    if "sell_price" in update_data:
+        sell_price = update_data.pop("sell_price")
+        if sell_price is not None:
+            db_device.sell_price = sell_price
+    for field, value in update_data.items():
         setattr(db_device, field, value)
 
     db.commit()
@@ -858,6 +864,44 @@ async def update_shipment_status(shipment_id: str, status_data: dict, db: Sessio
     db.commit()
     return {"message": "Shipment status updated"}
 
+
+@app.get("/branches/{branch_id}/items/medicine/{medicine_id}/last_receipt")
+async def get_last_receipt_medicine(branch_id: str, medicine_id: str, db: Session = Depends(get_db)):
+    result = (
+        db.query(DBShipmentItem.quantity, DBShipment.created_at)
+        .join(DBShipment, DBShipmentItem.shipment_id == DBShipment.id)
+        .filter(
+            DBShipment.status == "accepted",
+            DBShipment.to_branch_id == branch_id,
+            DBShipmentItem.item_type == "medicine",
+            DBShipmentItem.item_id == medicine_id,
+        )
+        .order_by(DBShipment.created_at.desc())
+        .first()
+    )
+    if result:
+        return {"quantity": result.quantity, "time": result.created_at}
+    return None
+
+
+@app.get("/branches/{branch_id}/items/device/{device_id}/last_receipt")
+async def get_last_receipt_device(branch_id: str, device_id: str, db: Session = Depends(get_db)):
+    result = (
+        db.query(DBShipmentItem.quantity, DBShipment.created_at)
+        .join(DBShipment, DBShipmentItem.shipment_id == DBShipment.id)
+        .filter(
+            DBShipment.status == "accepted",
+            DBShipment.to_branch_id == branch_id,
+            DBShipmentItem.item_type == "medical_device",
+            DBShipmentItem.item_id == device_id,
+        )
+        .order_by(DBShipment.created_at.desc())
+        .first()
+    )
+    if result:
+        return {"quantity": result.quantity, "time": result.created_at}
+    return None
+
 # Notification endpoints
 @app.get("/notifications")
 async def get_notifications(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
@@ -1022,26 +1066,29 @@ async def create_arrivals(batch: BatchArrivalCreate, db: Session = Depends(get_d
     try:
         for arrival_data in batch.arrivals:
             # Create arrival record
+            medicine = db.query(DBMedicine).filter(
+                DBMedicine.id == arrival_data.medicine_id,
+                DBMedicine.branch_id.is_(None)
+            ).first()
+
+            current_sell = medicine.sell_price if medicine else 0
+            sell_price = arrival_data.sell_price if arrival_data.sell_price is not None else current_sell
+
             db_arrival = DBArrival(
                 id=str(uuid.uuid4()),
                 medicine_id=arrival_data.medicine_id,
                 medicine_name=arrival_data.medicine_name,
                 quantity=arrival_data.quantity,
                 purchase_price=arrival_data.purchase_price,
-                sell_price=arrival_data.sell_price
+                sell_price=sell_price
             )
             db.add(db_arrival)
-            
-            # Update medicine quantity in main warehouse
-            medicine = db.query(DBMedicine).filter(
-                DBMedicine.id == arrival_data.medicine_id,
-                DBMedicine.branch_id.is_(None)
-            ).first()
-            
+
             if medicine:
                 medicine.quantity += arrival_data.quantity
                 medicine.purchase_price = arrival_data.purchase_price
-                medicine.sell_price = arrival_data.sell_price
+                if arrival_data.sell_price is not None:
+                    medicine.sell_price = arrival_data.sell_price
         
         db.commit()
         return {"message": "Arrivals created successfully"}
@@ -1060,24 +1107,29 @@ async def get_device_arrivals(db: Session = Depends(get_db)):
 async def create_device_arrivals(batch: BatchDeviceArrivalCreate, db: Session = Depends(get_db)):
     try:
         for arrival_data in batch.arrivals:
+            device = db.query(DBMedicalDevice).filter(
+                DBMedicalDevice.id == arrival_data.device_id,
+                DBMedicalDevice.branch_id.is_(None),
+            ).first()
+
+            current_sell = device.sell_price if device else 0
+            sell_price = arrival_data.sell_price if arrival_data.sell_price is not None else current_sell
+
             db_arrival = DBDeviceArrival(
                 id=str(uuid.uuid4()),
                 device_id=arrival_data.device_id,
                 device_name=arrival_data.device_name,
                 quantity=arrival_data.quantity,
                 purchase_price=arrival_data.purchase_price,
-                sell_price=arrival_data.sell_price,
+                sell_price=sell_price,
             )
             db.add(db_arrival)
 
-            device = db.query(DBMedicalDevice).filter(
-                DBMedicalDevice.id == arrival_data.device_id,
-                DBMedicalDevice.branch_id.is_(None),
-            ).first()
             if device:
                 device.quantity += arrival_data.quantity
                 device.purchase_price = arrival_data.purchase_price
-                device.sell_price = arrival_data.sell_price
+                if arrival_data.sell_price is not None:
+                    device.sell_price = arrival_data.sell_price
 
         db.commit()
         return {"message": "Device arrivals created successfully"}

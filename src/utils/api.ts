@@ -220,6 +220,14 @@ class ApiService {
     });
   }
 
+  async getLastMedicineReceipt(branchId: string, medicineId: string) {
+    return this.request<any>(`/branches/${branchId}/items/medicine/${medicineId}/last_receipt`);
+  }
+
+  async getLastDeviceReceipt(branchId: string, deviceId: string) {
+    return this.request<any>(`/branches/${branchId}/items/device/${deviceId}/last_receipt`);
+  }
+
   // Medical Device Categories (proxy to categories API)
   async getMedicalDeviceCategories() {
     // Use unified categories endpoint
