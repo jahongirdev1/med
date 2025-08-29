@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { NumberInput } from '@/components/NumberInput';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -22,17 +21,14 @@ const BranchMedicines: React.FC = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingMedicine, setEditingMedicine] = useState<any>(null);
-  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
-  const [selectedMedicine, setSelectedMedicine] = useState<any>(null);
-  const [lastReceipt, setLastReceipt] = useState<any>(null);
 
   // Form state
   const [formData, setFormData] = useState({
     name: '',
     category_id: '',
-    purchase_price: '0',
-    sell_price: '0',
-    quantity: '0'
+    purchase_price: 0,
+    sell_price: 0,
+    quantity: 0
   });
 
   useEffect(() => {
@@ -63,11 +59,7 @@ const BranchMedicines: React.FC = () => {
 
     try {
       const medicineData = {
-        name: formData.name,
-        category_id: formData.category_id,
-        purchase_price: parseFloat(formData.purchase_price),
-        sell_price: parseFloat(formData.sell_price),
-        quantity: parseInt(formData.quantity),
+        ...formData,
         branch_id: branchId
       };
 
@@ -93,14 +85,7 @@ const BranchMedicines: React.FC = () => {
     }
 
     try {
-      const updateData = {
-        name: formData.name,
-        category_id: formData.category_id,
-        purchase_price: parseFloat(formData.purchase_price),
-        sell_price: parseFloat(formData.sell_price),
-        quantity: parseInt(formData.quantity)
-      };
-      const response = await apiService.updateMedicine(editingMedicine.id, updateData);
+      const response = await apiService.updateMedicine(editingMedicine.id, formData);
       
       if (!response.error) {
         toast({ title: 'Лекарство обновлено!' });
@@ -137,9 +122,9 @@ const BranchMedicines: React.FC = () => {
     setFormData({
       name: '',
       category_id: '',
-      purchase_price: '0',
-      sell_price: '0',
-      quantity: '0'
+      purchase_price: 0,
+      sell_price: 0,
+      quantity: 0
     });
   };
 
@@ -148,22 +133,11 @@ const BranchMedicines: React.FC = () => {
     setFormData({
       name: medicine.name,
       category_id: medicine.category_id,
-      purchase_price: medicine.purchase_price.toString(),
-      sell_price: medicine.sell_price.toString(),
-      quantity: medicine.quantity.toString()
+      purchase_price: medicine.purchase_price,
+      sell_price: medicine.sell_price,
+      quantity: medicine.quantity
     });
     setEditDialogOpen(true);
-  };
-
-  const handleRowClick = async (medicine: any) => {
-    setSelectedMedicine(medicine);
-    try {
-      const res = await apiService.getLastMedicineReceipt(branchId, medicine.id);
-      setLastReceipt(res.data);
-    } catch {
-      setLastReceipt(null);
-    }
-    setReceiptDialogOpen(true);
   };
 
   const getCategoryName = (categoryId: string) => {
@@ -224,27 +198,33 @@ const BranchMedicines: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Закупочная цена</Label>
-                  <NumberInput
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
                     value={formData.purchase_price}
-                    onChange={(v) => setFormData({ ...formData, purchase_price: v })}
-                    decimal
+                    onChange={(e) => setFormData({...formData, purchase_price: Number(e.target.value)})}
                   />
                 </div>
                 <div>
                   <Label>Цена продажи</Label>
-                  <NumberInput
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
                     value={formData.sell_price}
-                    onChange={(v) => setFormData({ ...formData, sell_price: v })}
-                    decimal
+                    onChange={(e) => setFormData({...formData, sell_price: Number(e.target.value)})}
                   />
                 </div>
               </div>
 
               <div>
                 <Label>Количество</Label>
-                <NumberInput
+                <Input
+                  type="number"
+                  min="0"
                   value={formData.quantity}
-                  onChange={(v) => setFormData({ ...formData, quantity: v })}
+                  onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
                 />
               </div>
               
@@ -270,17 +250,21 @@ const BranchMedicines: React.FC = () => {
                 <TableRow>
                   <TableHead>Название</TableHead>
                   <TableHead>Категория</TableHead>
+                  <TableHead>Закупочная цена</TableHead>
+                  <TableHead>Цена продажи</TableHead>
                   <TableHead>Количество</TableHead>
                   <TableHead>Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {medicines.map((medicine) => (
-                  <TableRow key={medicine.id} onClick={() => handleRowClick(medicine)} className="cursor-pointer">
+                  <TableRow key={medicine.id}>
                     <TableCell className="font-medium">{medicine.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{getCategoryName(medicine.category_id)}</Badge>
                     </TableCell>
+                    <TableCell>{medicine.purchase_price} ₸</TableCell>
+                    <TableCell>{medicine.sell_price} ₸</TableCell>
                     <TableCell>
                       <Badge variant={medicine.quantity > 0 ? "default" : "destructive"}>
                         {medicine.quantity} шт.
@@ -288,10 +272,10 @@ const BranchMedicines: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); openEditDialog(medicine); }}>
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(medicine)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(medicine.id); }}>
+                        <Button variant="outline" size="sm" onClick={() => handleDelete(medicine.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -308,21 +292,6 @@ const BranchMedicines: React.FC = () => {
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{selectedMedicine?.name}</DialogTitle>
-          </DialogHeader>
-          <div>
-            {lastReceipt ? (
-              <p>Последнее поступление: {lastReceipt.quantity} шт • {new Date(lastReceipt.time).toLocaleString()}</p>
-            ) : (
-              <p>Поступлений не было</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
@@ -360,27 +329,33 @@ const BranchMedicines: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Закупочная цена</Label>
-                <NumberInput
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
                   value={formData.purchase_price}
-                  onChange={(v) => setFormData({ ...formData, purchase_price: v })}
-                  decimal
+                  onChange={(e) => setFormData({...formData, purchase_price: Number(e.target.value)})}
                 />
               </div>
               <div>
                 <Label>Цена продажи</Label>
-                <NumberInput
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
                   value={formData.sell_price}
-                  onChange={(v) => setFormData({ ...formData, sell_price: v })}
-                  decimal
+                  onChange={(e) => setFormData({...formData, sell_price: Number(e.target.value)})}
                 />
               </div>
             </div>
 
             <div>
               <Label>Количество</Label>
-              <NumberInput
+              <Input
+                type="number"
+                min="0"
                 value={formData.quantity}
-                onChange={(v) => setFormData({ ...formData, quantity: v })}
+                onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
               />
             </div>
             
