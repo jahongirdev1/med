@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import NumberInput from '@/components/number-input';
 import { Label } from '@/components/ui/label';
 import {
   Dialog,
@@ -23,8 +24,8 @@ const Medicines: React.FC = () => {
   
   const [formData, setFormData] = useState({
     name: '',
-    purchasePrice: '',
-    quantity: '',
+    purchasePrice: '0',
+    quantity: '0',
     categoryId: ''
   });
 
@@ -58,8 +59,8 @@ const Medicines: React.FC = () => {
   const resetForm = () => {
     setFormData({
       name: '',
-      purchasePrice: '',
-      quantity: '',
+      purchasePrice: '0',
+      quantity: '0',
       categoryId: ''
     });
     setEditingMedicine(null);
@@ -178,20 +179,19 @@ const Medicines: React.FC = () => {
               </div>
               <div>
                 <Label htmlFor="purchasePrice">Цена закупки (₸)</Label>
-                <Input
+                <NumberInput
                   id="purchasePrice"
-                  type="number"
+                  allowDecimal
                   value={formData.purchasePrice}
-                  onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value })}
+                  onValueChange={(v) => setFormData({ ...formData, purchasePrice: v })}
                 />
               </div>
               <div>
                 <Label htmlFor="quantity">Количество</Label>
-                <Input
+                <NumberInput
                   id="quantity"
-                  type="number"
                   value={formData.quantity}
-                  onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                  onValueChange={(v) => setFormData({ ...formData, quantity: v })}
                 />
               </div>
               <div>
