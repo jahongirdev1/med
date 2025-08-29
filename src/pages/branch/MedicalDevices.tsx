@@ -5,6 +5,7 @@ import { Package, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const BranchMedicalDevices: React.FC = () => {
   const currentUser = storage.getCurrentUser();
@@ -14,6 +15,8 @@ const BranchMedicalDevices: React.FC = () => {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [receiptInfo, setReceiptInfo] = useState<any>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -45,6 +48,12 @@ const BranchMedicalDevices: React.FC = () => {
     getCategoryName(device.category_id).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const handleCardClick = async (device: any) => {
+    const res = await apiService.getLastReceiptDevice(branchId, device.id);
+    setReceiptInfo(res.data || null);
+    setReceiptOpen(true);
+  };
+
   if (loading) {
     return <div className="flex justify-center items-center h-64">Загрузка ИМН...</div>;
   }
@@ -68,23 +77,17 @@ const BranchMedicalDevices: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredDevices.map((device) => (
-          <Card key={device.id}>
+          <Card key={device.id} onClick={() => handleCardClick(device)} className="cursor-pointer">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">{device.name}</CardTitle>
               <Badge variant="secondary">{getCategoryName(device.category_id)}</Badge>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Цена закупки:</span>
-                  <span className="font-medium">{device.purchase_price?.toFixed(2)} ₸</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Количество:</span>
-                  <Badge variant={device.quantity > 10 ? "default" : device.quantity > 0 ? "secondary" : "destructive"}>
-                    {device.quantity} шт.
-                  </Badge>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-muted-foreground">Количество:</span>
+                <Badge variant={device.quantity > 10 ? "default" : device.quantity > 0 ? "secondary" : "destructive"}>
+                  {device.quantity} шт.
+                </Badge>
               </div>
             </CardContent>
           </Card>
@@ -99,6 +102,20 @@ const BranchMedicalDevices: React.FC = () => {
           </p>
         </div>
       )}
+      <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Последнее поступление</DialogTitle>
+          </DialogHeader>
+          {receiptInfo ? (
+            <p>
+              Последнее поступление: {receiptInfo.quantity} шт • {new Date(receiptInfo.time).toLocaleString()}
+            </p>
+          ) : (
+            <p>Поступлений не было</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
