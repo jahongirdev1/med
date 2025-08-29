@@ -1,4 +1,8 @@
-const API_BASE_URL = 'http://localhost:8000';
+// Allow the API base URL to be configured via environment variable so the
+// frontend can communicate with a backend running on a different host in
+// production. Fallback to the local development server if the variable is not
+// provided.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 interface LoginData {
   login: string;
