@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/NumberInput';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -18,9 +19,8 @@ const AdminMedicalDevices: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     categoryId: '',
-    purchasePrice: '',
-    sellPrice: '',
-    quantity: '',
+    purchasePrice: '0',
+    quantity: '0',
     branchId: '',
   });
 
@@ -44,12 +44,12 @@ const AdminMedicalDevices: React.FC = () => {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', categoryId: '', purchasePrice: '', sellPrice: '', quantity: '', branchId: '' });
+    setFormData({ name: '', categoryId: '', purchasePrice: '0', quantity: '0', branchId: '' });
     setEditingDevice(null);
   };
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.categoryId || !formData.purchasePrice || !formData.sellPrice || !formData.quantity) {
+    if (!formData.name || !formData.categoryId || !formData.purchasePrice || !formData.quantity) {
       toast({ title: 'Ошибка', description: 'Заполните все поля', variant: 'destructive' });
       return;
     }
@@ -58,7 +58,6 @@ const AdminMedicalDevices: React.FC = () => {
       name: formData.name,
       category_id: formData.categoryId,
       purchase_price: parseFloat(formData.purchasePrice),
-      sell_price: parseFloat(formData.sellPrice),
       quantity: parseInt(formData.quantity),
       branch_id: formData.branchId || null,
     };
@@ -96,7 +95,6 @@ const AdminMedicalDevices: React.FC = () => {
       name: device.name,
       categoryId: device.category_id,
       purchasePrice: device.purchase_price.toString(),
-      sellPrice: device.sell_price.toString(),
       quantity: device.quantity.toString(),
       branchId: device.branch_id || '',
     });
@@ -155,15 +153,11 @@ const AdminMedicalDevices: React.FC = () => {
               </div>
               <div>
                 <Label>Цена закупки</Label>
-                <Input type="number" value={formData.purchasePrice} onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value })} />
-              </div>
-              <div>
-                <Label>Цена продажи</Label>
-                <Input type="number" value={formData.sellPrice} onChange={(e) => setFormData({ ...formData, sellPrice: e.target.value })} />
+                <NumberInput decimal value={formData.purchasePrice} onChange={(v) => setFormData({ ...formData, purchasePrice: v })} />
               </div>
               <div>
                 <Label>Количество</Label>
-                <Input type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} />
+                <NumberInput value={formData.quantity} onChange={(v) => setFormData({ ...formData, quantity: v })} />
               </div>
               <div>
                 <Label>ID филиала (опционально)</Label>
