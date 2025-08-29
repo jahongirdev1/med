@@ -167,7 +167,7 @@ class ArrivalBase(BaseModel):
     medicine_name: str
     quantity: int
     purchase_price: float
-    sell_price: Optional[float] = None
+    sell_price: float
 
 class ArrivalCreate(ArrivalBase):
     pass
@@ -195,7 +195,7 @@ class DeviceArrivalBase(BaseModel):
     device_name: str
     quantity: int
     purchase_price: float
-    sell_price: Optional[float] = None
+    sell_price: float
 
 
 class DeviceArrivalCreate(DeviceArrivalBase):
@@ -234,7 +234,7 @@ class MedicalDeviceBase(BaseModel):
     name: str
     category_id: str
     purchase_price: float
-    sell_price: Optional[float] = None
+    sell_price: float
     quantity: int
     branch_id: Optional[str] = None
 
