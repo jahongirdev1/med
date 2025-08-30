@@ -23,14 +23,6 @@ class User(UserBase):
     
     model_config = ConfigDict(from_attributes=True)
 
-class UserLogin(BaseModel):
-    login: str
-    password: str
-
-class LoginResponse(BaseModel):
-    user: User
-    token: str
-
 # Branch schemas
 class BranchBase(BaseModel):
     name: str
