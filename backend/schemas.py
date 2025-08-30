@@ -3,6 +3,26 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
+# Auth schemas
+
+class LoginIn(BaseModel):
+    login: str
+    password: str
+
+
+class UserPublic(BaseModel):
+    id: str
+    login: str
+    role: str
+    branch_id: str | None = None
+
+
+class LoginOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserPublic
+
+
 # User schemas
 class UserBase(BaseModel):
     login: str
@@ -22,14 +42,6 @@ class User(UserBase):
     id: str
     
     model_config = ConfigDict(from_attributes=True)
-
-class UserLogin(BaseModel):
-    login: str
-    password: str
-
-class LoginResponse(BaseModel):
-    user: User
-    token: str
 
 # Branch schemas
 class BranchBase(BaseModel):

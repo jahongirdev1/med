@@ -1,13 +1,46 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, select, update, MetaData, Table
-from database import get_db, create_tables, engine, User as DBUser, Branch as DBBranch, Medicine as DBMedicine, Employee as DBEmployee, Patient as DBPatient, Transfer as DBTransfer, DispensingRecord as DBDispensingRecord, DispensingItem as DBDispensingItem, Arrival as DBArrival, DeviceArrival as DBDeviceArrival, Category as DBCategory, MedicalDevice as DBMedicalDevice, Shipment as DBShipment, ShipmentItem as DBShipmentItem, Notification as DBNotification
+from sqlalchemy.sql import text
+from database import (
+    get_db,
+    create_tables,
+    engine,
+    SessionLocal,
+    User as DBUser,
+    Branch as DBBranch,
+    Medicine as DBMedicine,
+    Employee as DBEmployee,
+    Patient as DBPatient,
+    Transfer as DBTransfer,
+    DispensingRecord as DBDispensingRecord,
+    DispensingItem as DBDispensingItem,
+    Arrival as DBArrival,
+    DeviceArrival as DBDeviceArrival,
+    Category as DBCategory,
+    MedicalDevice as DBMedicalDevice,
+    Shipment as DBShipment,
+    ShipmentItem as DBShipmentItem,
+    Notification as DBNotification,
+)
 from schemas import *
+import schemas
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+from jose import jwt
+from passlib.context import CryptContext
 import uuid
 import json
+import os
+
+
+pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret")
+JWT_ALG = os.getenv("JWT_ALG", "HS256")
+JWT_EXP_MIN = int(os.getenv("JWT_EXP_MIN", "720"))
+
+auth = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def ensure_schema_patches():
@@ -136,6 +169,91 @@ def ensure_schema_patches():
             )
 
 
+# default data helpers
+
+
+def ensure_default_categories(db: Session):
+    medicine_category = db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").one_or_none()
+    if not medicine_category:
+        db.add(
+            DBCategory(
+                id=str(uuid.uuid4()),
+                name="Общие лекарства",
+                description="Общая категория лекарств",
+                type="medicine",
+            )
+        )
+
+    device_category = db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").one_or_none()
+    if not device_category:
+        db.add(
+            DBCategory(
+                id=str(uuid.uuid4()),
+                name="Общие ИМН",
+                description="Общая категория изделий медицинского назначения",
+                type="medical_device",
+            )
+        )
+
+
+def seed_defaults(db: Session):
+    admin_login = os.getenv("ADMIN_LOGIN", "admin")
+    admin_password = os.getenv("ADMIN_PASSWORD", "adm1n")
+    admin = db.query(DBUser).filter(DBUser.login == admin_login).one_or_none()
+    if not admin:
+        admin_kwargs = {
+            "id": str(uuid.uuid4()),
+            "login": admin_login,
+            "role": "admin",
+        }
+        if hasattr(DBUser, "is_active"):
+            admin_kwargs["is_active"] = True
+        if hasattr(DBUser, "branch_id"):
+            admin_kwargs["branch_id"] = None
+        password_hash = pwd.hash(admin_password)
+        if hasattr(DBUser, "password_hash"):
+            admin_kwargs["password_hash"] = password_hash
+        else:
+            admin_kwargs["password"] = password_hash
+        db.add(DBUser(**admin_kwargs))
+
+    ensure_default_categories(db)
+    db.commit()
+
+
+# Auth endpoints
+@auth.post("/login", response_model=schemas.LoginOut)
+def login(payload: schemas.LoginIn, db: Session = Depends(get_db)):
+    try:
+        user = db.query(DBUser).filter(DBUser.login == payload.login).one_or_none()
+        if not user or (hasattr(user, "is_active") and not user.is_active):
+            raise HTTPException(401, "Invalid login or inactive user")
+
+        password_hash = getattr(user, "password_hash", None) or getattr(user, "password", "")
+        if not pwd.verify(payload.password, password_hash):
+            raise HTTPException(401, "Invalid login or password")
+
+        exp = datetime.utcnow() + timedelta(minutes=JWT_EXP_MIN)
+        token = jwt.encode({"sub": user.id, "exp": exp}, JWT_SECRET, algorithm=JWT_ALG)
+
+        return {
+            "access_token": token,
+            "user": {
+                "id": user.id,
+                "login": user.login,
+                "role": user.role,
+                "branch_id": getattr(user, "branch_id", None),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        import logging, traceback
+
+        logging.exception("Login error")
+        raise HTTPException(500, "Internal auth error")
+
+
 # Create FastAPI app
 app = FastAPI(title="Warehouse Management System")
 
@@ -148,62 +266,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create tables on startup
+# logging middleware and auxiliary endpoints are defined below
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except Exception:
+        import logging, traceback
+
+        logging.exception("Unhandled error on %s %s", request.method, request.url.path)
+        raise
+
+
+app.include_router(auth)
+
+
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    db.execute(text("SELECT 1"))
+    return {"ok": True}
+
+
 @app.on_event("startup")
-async def startup_event():
+def on_startup():
     create_tables()
-    # Create default admin user if not exists
-    db = next(get_db())
-    admin_user = db.query(DBUser).filter(DBUser.login == "admin").first()
-    if not admin_user:
-        admin_user = DBUser(
-            id="admin",
-            login="admin",
-            password="admin",
-            role="admin"
-        )
-        db.add(admin_user)
-        db.commit()
-    
-    # Create default categories
-    medicine_category = db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").first()
-    if not medicine_category:
-        medicine_category = DBCategory(
-            id=str(uuid.uuid4()),
-            name="Общие лекарства",
-            description="Общая категория лекарств",
-            type="medicine"
-        )
-        db.add(medicine_category)
-    
-    device_category = db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").first()
-    if not device_category:
-        device_category = DBCategory(
-            id=str(uuid.uuid4()),
-            name="Общие ИМН", 
-            description="Общая категория изделий медицинского назначения",
-            type="medical_device"
-        )
-        db.add(device_category)
-        
-    db.commit()
-
-    # Apply schema patches and constraints
     ensure_schema_patches()
-
-# Auth endpoints
-@app.post("/auth/login", response_model=LoginResponse)
-async def login(login_data: UserLogin, db: Session = Depends(get_db)):
-    # Check user login
-    db_user = db.query(DBUser).filter(DBUser.login == login_data.login, DBUser.password == login_data.password).first()
-    if db_user:
-        user = User.model_validate(db_user)
-        return LoginResponse(
-            user=user,
-            token=f"token_{db_user.id}"
-        )
-    
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    db = SessionLocal()
+    try:
+        seed_defaults(db)
+    finally:
+        db.close()
 
 # User endpoints
 @app.get("/users", response_model=List[User])
@@ -677,21 +771,35 @@ async def get_shipments(branch_id: Optional[str] = None, db: Session = Depends(g
     for shipment in shipments:
         items = db.query(DBShipmentItem).filter(DBShipmentItem.shipment_id == shipment.id).all()
         out_items = []
+        meds_raw = []
+        devices_raw = []
         for it in items:
             if it.item_type == "medicine":
                 med = db.query(DBMedicine).get(it.item_id)
+                name = med.name if med else it.item_name
                 out_items.append({
                     "type": "medicine",
                     "id": it.item_id,
-                    "name": med.name if med else it.item_name,
+                    "name": name,
+                    "quantity": it.quantity,
+                })
+                meds_raw.append({
+                    "medicine_id": it.item_id,
+                    "medicine_name": name,
                     "quantity": it.quantity,
                 })
             else:
                 dev = db.query(DBMedicalDevice).get(it.item_id)
+                name = dev.name if dev else it.item_name
                 out_items.append({
                     "type": "medical_device",
                     "id": it.item_id,
-                    "name": dev.name if dev else it.item_name,
+                    "name": name,
+                    "quantity": it.quantity,
+                })
+                devices_raw.append({
+                    "device_id": it.item_id,
+                    "device_name": name,
                     "quantity": it.quantity,
                 })
 
@@ -704,6 +812,10 @@ async def get_shipments(branch_id: Optional[str] = None, db: Session = Depends(g
             "accepted_at": shipment.accepted_at.isoformat() if shipment.accepted_at else None,
             "items": out_items,
         }
+        if meds_raw:
+            shipment_data["medicines"] = meds_raw
+        if devices_raw:
+            shipment_data["medical_devices"] = devices_raw
         result.append(shipment_data)
 
     return {"data": result}
@@ -792,6 +904,8 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
     try:
         items = db.query(DBShipmentItem).filter(DBShipmentItem.shipment_id == shipment_id).all()
         out_items = []
+        meds_raw = []
+        devices_raw = []
         for item in items:
             if item.item_type == "medicine":
                 main_medicine = db.query(DBMedicine).filter(
@@ -820,10 +934,16 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
                     )
                     db.add(new_medicine)
 
+                name = main_medicine.name if main_medicine else item.item_name
                 out_items.append({
                     "type": "medicine",
                     "id": item.item_id,
-                    "name": main_medicine.name if main_medicine else item.item_name,
+                    "name": name,
+                    "quantity": item.quantity,
+                })
+                meds_raw.append({
+                    "medicine_id": item.item_id,
+                    "medicine_name": name,
                     "quantity": item.quantity,
                 })
 
@@ -854,10 +974,16 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
                     )
                     db.add(new_device)
 
+                name = main_device.name if main_device else item.item_name
                 out_items.append({
                     "type": "medical_device",
                     "id": item.item_id,
-                    "name": main_device.name if main_device else item.item_name,
+                    "name": name,
+                    "quantity": item.quantity,
+                })
+                devices_raw.append({
+                    "device_id": item.item_id,
+                    "device_name": name,
                     "quantity": item.quantity,
                 })
 
@@ -873,6 +999,8 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
             "created_at": shipment.created_at.isoformat(),
             "accepted_at": shipment.accepted_at.isoformat() if shipment.accepted_at else None,
             "items": out_items,
+            "medicines": meds_raw or None,
+            "medical_devices": devices_raw or None,
         }
     except Exception as e:
         db.rollback()
