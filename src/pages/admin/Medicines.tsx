@@ -14,7 +14,6 @@ import { apiService } from '@/utils/api';
 import { toast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { NumberInput } from '@/components/NumberInput';
 
 const Medicines: React.FC = () => {
   const [medicines, setMedicines] = useState<any[]>([]);
@@ -24,12 +23,10 @@ const Medicines: React.FC = () => {
   
   const [formData, setFormData] = useState({
     name: '',
-    purchasePrice: '0',
-    quantity: '0',
+    purchasePrice: '',
+    quantity: '',
     categoryId: ''
   });
-  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
-  const [lastReceipt, setLastReceipt] = useState<any>(null);
 
   useEffect(() => {
     fetchMedicines();
@@ -61,8 +58,8 @@ const Medicines: React.FC = () => {
   const resetForm = () => {
     setFormData({
       name: '',
-      purchasePrice: '0',
-      quantity: '0',
+      purchasePrice: '',
+      quantity: '',
       categoryId: ''
     });
     setEditingMedicine(null);
@@ -77,7 +74,8 @@ const Medicines: React.FC = () => {
       toast({ title: 'Ошибка', description: 'Заполните все поля', variant: 'destructive' });
       return;
     }
-    const baseData = {
+
+    const medicineData = {
       name: formData.name,
       purchase_price: parseFloat(formData.purchasePrice),
       sell_price: 0,
@@ -88,18 +86,17 @@ const Medicines: React.FC = () => {
 
     try {
       if (editingMedicine) {
-        const updateData = { ...baseData };
-        const response = await apiService.updateMedicine(editingMedicine.id, updateData);
+        const response = await apiService.updateMedicine(editingMedicine.id, medicineData);
         if (!response.error) {
-          setMedicines(prev => prev.map(m => (
-            m.id === editingMedicine.id ? { ...updateData, id: editingMedicine.id } : m
-          )));
+          setMedicines(prev => prev.map(m => 
+            m.id === editingMedicine.id ? { ...medicineData, id: editingMedicine.id } : m
+          ));
           toast({ title: 'Лекарство обновлено' });
         } else {
           toast({ title: 'Ошибка', description: response.error, variant: 'destructive' });
         }
       } else {
-        const response = await apiService.createMedicine(baseData);
+        const response = await apiService.createMedicine(medicineData);
         if (response.data) {
           setMedicines(prev => [...prev, response.data]);
           toast({ title: 'Лекарство добавлено' });
@@ -142,20 +139,6 @@ const Medicines: React.FC = () => {
     }
   };
 
-  const handleRowClick = async (medicine: any) => {
-    try {
-      const res = await apiService.getArrivals();
-      const list = res.data?.data || [];
-      const found = list
-        .filter((a: any) => a.medicine_id === medicine.id)
-        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-      setLastReceipt(found ? { quantity: found.quantity, time: found.date } : null);
-    } catch {
-      setLastReceipt(null);
-    }
-    setReceiptDialogOpen(true);
-  };
-
   if (loading) {
     return <div className="flex justify-center items-center h-64">Загрузка...</div>;
   }
@@ -195,17 +178,20 @@ const Medicines: React.FC = () => {
               </div>
               <div>
                 <Label htmlFor="purchasePrice">Цена закупки (₸)</Label>
-                <NumberInput
+                <Input
+                  id="purchasePrice"
+                  type="number"
                   value={formData.purchasePrice}
-                  onChange={(v) => setFormData({ ...formData, purchasePrice: v })}
-                  decimal
+                  onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value })}
                 />
               </div>
               <div>
                 <Label htmlFor="quantity">Количество</Label>
-                <NumberInput
+                <Input
+                  id="quantity"
+                  type="number"
                   value={formData.quantity}
-                  onChange={(v) => setFormData({ ...formData, quantity: v })}
+                  onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
                 />
               </div>
               <div>
@@ -255,7 +241,7 @@ const Medicines: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {medicines.map((medicine) => (
-                <tr key={medicine.id} onClick={() => handleRowClick(medicine)} className="cursor-pointer">
+                <tr key={medicine.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {medicine.name}
                   </td>
@@ -270,14 +256,14 @@ const Medicines: React.FC = () => {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={(e) => { e.stopPropagation(); handleEdit(medicine); }}
+                        onClick={() => handleEdit(medicine)}
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={(e) => { e.stopPropagation(); handleDelete(medicine.id); }}
+                        onClick={() => handleDelete(medicine.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -295,22 +281,6 @@ const Medicines: React.FC = () => {
           </div>
         )}
       </div>
-
-      <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Последнее поступление</DialogTitle>
-          </DialogHeader>
-          {lastReceipt ? (
-            <div className="space-y-2">
-              <p>Количество: {lastReceipt.quantity}</p>
-              <p>Время: {new Date(lastReceipt.time).toLocaleString()}</p>
-            </div>
-          ) : (
-            <p>Данных нет</p>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

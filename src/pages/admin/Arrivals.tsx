@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { NumberInput } from '@/components/NumberInput';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -10,8 +10,9 @@ import { Plus, Trash2, Save } from 'lucide-react';
 
 interface ArrivalItem {
   itemId: string;
-  quantity: string;
-  purchasePrice: string;
+  quantity: number;
+  purchasePrice: number;
+  sellPrice: number;
 }
 
 const AdminArrivals: React.FC = () => {
@@ -42,7 +43,7 @@ const AdminArrivals: React.FC = () => {
   };
 
   const addArrival = (type: 'medicine' | 'device') => {
-    const item: ArrivalItem = { itemId: '', quantity: '0', purchasePrice: '0' };
+    const item = { itemId: '', quantity: 1, purchasePrice: 0, sellPrice: 0 };
     type === 'medicine'
       ? setMedicineArrivals([...medicineArrivals, item])
       : setDeviceArrivals([...deviceArrivals, item]);
@@ -52,7 +53,7 @@ const AdminArrivals: React.FC = () => {
     type: 'medicine' | 'device',
     index: number,
     field: keyof ArrivalItem,
-    value: string,
+    value: string | number,
   ) => {
     const list = type === 'medicine' ? [...medicineArrivals] : [...deviceArrivals];
     list[index] = { ...list[index], [field]: value };
@@ -74,11 +75,13 @@ const AdminArrivals: React.FC = () => {
           [`${key}_id`]: arr.itemId,
           [`${key}_name`]: item?.name || '',
           quantity: 0,
-          purchase_price: 0,
+          purchase_price: arr.purchasePrice,
+          sell_price: arr.sellPrice,
         };
       }
-      grouped[arr.itemId].quantity += Number(arr.quantity);
-      grouped[arr.itemId].purchase_price = Number(arr.purchasePrice);
+      grouped[arr.itemId].quantity += arr.quantity;
+      grouped[arr.itemId].purchase_price = arr.purchasePrice;
+      grouped[arr.itemId].sell_price = arr.sellPrice;
     }
     return Object.values(grouped);
   };
@@ -143,7 +146,7 @@ const AdminArrivals: React.FC = () => {
               </Button>
             </div>
             {medicineArrivals.map((arrival, index) => (
-              <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg mb-4">
+              <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg mb-4">
                 <div>
                   <Label>Лекарство</Label>
                   <Select value={arrival.itemId} onValueChange={(v) => updateArrival('medicine', index, 'itemId', v)}>
@@ -159,11 +162,15 @@ const AdminArrivals: React.FC = () => {
                 </div>
                 <div>
                   <Label>Количество</Label>
-                  <NumberInput value={arrival.quantity} onChange={(v) => updateArrival('medicine', index, 'quantity', v)} />
+                  <Input type="number" value={arrival.quantity} onChange={(e) => updateArrival('medicine', index, 'quantity', Number(e.target.value))} />
                 </div>
                 <div>
                   <Label>Цена закупки</Label>
-                  <NumberInput decimal value={arrival.purchasePrice} onChange={(v) => updateArrival('medicine', index, 'purchasePrice', v)} />
+                  <Input type="number" value={arrival.purchasePrice} onChange={(e) => updateArrival('medicine', index, 'purchasePrice', Number(e.target.value))} />
+                </div>
+                <div>
+                  <Label>Цена продажи</Label>
+                  <Input type="number" value={arrival.sellPrice} onChange={(e) => updateArrival('medicine', index, 'sellPrice', Number(e.target.value))} />
                 </div>
                 <div className="flex items-end">
                   <Button variant="destructive" onClick={() => removeArrival('medicine', index)}>
@@ -189,7 +196,7 @@ const AdminArrivals: React.FC = () => {
               </Button>
             </div>
             {deviceArrivals.map((arrival, index) => (
-              <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg mb-4">
+              <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg mb-4">
                 <div>
                   <Label>ИМН</Label>
                   <Select value={arrival.itemId} onValueChange={(v) => updateArrival('device', index, 'itemId', v)}>
@@ -205,11 +212,15 @@ const AdminArrivals: React.FC = () => {
                 </div>
                 <div>
                   <Label>Количество</Label>
-                  <NumberInput value={arrival.quantity} onChange={(v) => updateArrival('device', index, 'quantity', v)} />
+                  <Input type="number" value={arrival.quantity} onChange={(e) => updateArrival('device', index, 'quantity', Number(e.target.value))} />
                 </div>
                 <div>
                   <Label>Цена закупки</Label>
-                  <NumberInput decimal value={arrival.purchasePrice} onChange={(v) => updateArrival('device', index, 'purchasePrice', v)} />
+                  <Input type="number" value={arrival.purchasePrice} onChange={(e) => updateArrival('device', index, 'purchasePrice', Number(e.target.value))} />
+                </div>
+                <div>
+                  <Label>Цена продажи</Label>
+                  <Input type="number" value={arrival.sellPrice} onChange={(e) => updateArrival('device', index, 'sellPrice', Number(e.target.value))} />
                 </div>
                 <div className="flex items-end">
                   <Button variant="destructive" onClick={() => removeArrival('device', index)}>
