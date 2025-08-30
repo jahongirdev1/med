@@ -3,21 +3,16 @@ import React, { useState, useEffect } from 'react';
 import { storage } from '@/utils/storage';
 import { apiService } from '@/utils/api';
 import { Package, Users, UserCheck, ArrowLeftRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 const BranchDashboard: React.FC = () => {
   const currentUser = storage.getCurrentUser();
   const branchId = currentUser?.branchId;
   
   const [medicines, setMedicines] = useState<any[]>([]);
-  const [devices, setDevices] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [dispensings, setDispensings] = useState<any[]>([]);
-  const [shipments, setShipments] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
     fetchData();
@@ -25,23 +20,17 @@ const BranchDashboard: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [medicinesRes, devicesRes, employeesRes, patientsRes, dispensingsRes, shipmentsRes, notificationsRes] = await Promise.all([
+      const [medicinesRes, employeesRes, patientsRes, dispensingsRes] = await Promise.all([
         apiService.getMedicines(branchId),
-        apiService.getMedicalDevices(branchId),
         apiService.getEmployees(branchId),
         apiService.getPatients(branchId),
-        apiService.getDispensings(branchId),
-        apiService.getShipments(branchId),
-        apiService.getNotifications(branchId)
+        apiService.getDispensings(branchId)
       ]);
 
       if (medicinesRes.data) setMedicines(medicinesRes.data);
-      if (devicesRes.data) setDevices(devicesRes.data);
       if (employeesRes.data) setEmployees(employeesRes.data);
       if (patientsRes.data) setPatients(patientsRes.data);
       if (dispensingsRes.data) setDispensings(dispensingsRes.data);
-      if (shipmentsRes.data) setShipments(shipmentsRes.data);
-      if (notificationsRes.data) setNotifications(notificationsRes.data);
     } catch (error) {
       console.error('Error fetching branch data:', error);
     } finally {
@@ -54,10 +43,7 @@ const BranchDashboard: React.FC = () => {
   }
 
   const totalMedicines = medicines.reduce((sum, med) => sum + med.quantity, 0);
-  const totalDevices = devices.reduce((sum, dev) => sum + dev.quantity, 0);
   const totalDispensed = dispensings.reduce((sum, disp) => sum + disp.quantity, 0);
-  const hasPendingShipments = shipments.some((s) => s.status === 'pending');
-  const hasUnreadNotifications = notifications.some((n: any) => !n.is_read);
 
   const stats = [
     {
@@ -65,12 +51,6 @@ const BranchDashboard: React.FC = () => {
       value: totalMedicines,
       icon: Package,
       color: 'bg-blue-500'
-    },
-    {
-      title: 'ИМН в наличии',
-      value: totalDevices,
-      icon: Package,
-      color: 'bg-teal-500'
     },
     {
       title: 'Сотрудники',
@@ -94,21 +74,10 @@ const BranchDashboard: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-4">
+      <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">{currentUser?.branchName}</h1>
         <p className="text-gray-600 mt-2">Панель управления филиалом</p>
       </div>
-
-      {(hasPendingShipments || hasUnreadNotifications) && (
-        <div
-          className="mb-8 p-4 bg-yellow-100 text-yellow-800 rounded cursor-pointer"
-          onClick={() => navigate(hasPendingShipments ? '/branch/arrivals' : '/branch/notifications')}
-        >
-          {hasPendingShipments
-            ? 'Есть ожидающие поступления'
-            : 'Есть непрочитанные уведомления'}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat, index) => {

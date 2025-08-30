@@ -9,8 +9,10 @@ class UserBase(BaseModel):
     role: str
     branch_name: Optional[str] = None
 
+
 class UserCreate(UserBase):
     password: str
+
 
 class UserUpdate(BaseModel):
     login: Optional[str] = None
@@ -18,14 +20,26 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     branch_name: Optional[str] = None
 
+
 class User(UserBase):
     id: str
-    
-    model_config = ConfigDict(from_attributes=True)
+    password: str
+
+    @classmethod
+    def model_validate(cls, obj):
+        return cls.model_construct(
+            id=obj.id,
+            login=obj.login,
+            password=obj.password,
+            role=obj.role,
+            branch_name=getattr(obj, "branch_name", None),
+        )
+
 
 class UserLogin(BaseModel):
     login: str
     password: str
+
 
 class LoginResponse(BaseModel):
     user: User
@@ -167,7 +181,7 @@ class ArrivalBase(BaseModel):
     medicine_name: str
     quantity: int
     purchase_price: float
-    sell_price: Optional[float] = None
+    sell_price: float
 
 class ArrivalCreate(ArrivalBase):
     pass
@@ -195,7 +209,7 @@ class DeviceArrivalBase(BaseModel):
     device_name: str
     quantity: int
     purchase_price: float
-    sell_price: Optional[float] = None
+    sell_price: float
 
 
 class DeviceArrivalCreate(DeviceArrivalBase):
@@ -234,7 +248,7 @@ class MedicalDeviceBase(BaseModel):
     name: str
     category_id: str
     purchase_price: float
-    sell_price: Optional[float] = None
+    sell_price: float
     quantity: int
     branch_id: Optional[str] = None
 
@@ -271,15 +285,22 @@ class ShipmentBase(BaseModel):
 class ShipmentCreate(ShipmentBase):
     pass
 
+class ShipmentItem(BaseModel):
+    type: str
+    id: str
+    name: str
+    quantity: int
+
+
 class Shipment(BaseModel):
     id: str
     to_branch_id: str
     status: str
     rejection_reason: Optional[str] = None
     created_at: str
-    medicines: Optional[List[dict]] = []
-    medical_devices: Optional[List[dict]] = []
-    
+    accepted_at: Optional[str] = None
+    items: List[ShipmentItem] = []
+
     model_config = ConfigDict(from_attributes=True)
 
 class ShipmentRejection(BaseModel):
