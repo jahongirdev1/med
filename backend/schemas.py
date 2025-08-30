@@ -3,31 +3,11 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
-# Auth schemas
-
-class LoginIn(BaseModel):
-    login: str
-    password: str
-
-
-class UserPublic(BaseModel):
-    id: str
-    login: str
-    role: str
-    branch_id: str | None = None
-
-
-class LoginOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: UserPublic
-
-
 # User schemas
 class UserBase(BaseModel):
     login: str
     role: str
-    branch_id: Optional[str] = None
+    branch_name: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -38,14 +18,32 @@ class UserUpdate(BaseModel):
     login: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
-    branch_id: Optional[str] = None
+    branch_name: Optional[str] = None
 
 
 class User(UserBase):
     id: str
-    is_active: bool = True
+    password: str
 
-    model_config = ConfigDict(from_attributes=True)
+    @classmethod
+    def model_validate(cls, obj):
+        return cls.model_construct(
+            id=obj.id,
+            login=obj.login,
+            password=obj.password,
+            role=obj.role,
+            branch_name=getattr(obj, "branch_name", None),
+        )
+
+
+class UserLogin(BaseModel):
+    login: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    user: User
+    token: str
 
 # Branch schemas
 class BranchBase(BaseModel):
