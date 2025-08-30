@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, select, update, MetaData, Table
-from database import get_db, create_tables, engine, User as DBUser, Branch as DBBranch, Medicine as DBMedicine, Employee as DBEmployee, Patient as DBPatient, Transfer as DBTransfer, DispensingRecord as DBDispensingRecord, DispensingItem as DBDispensingItem, Arrival as DBArrival, DeviceArrival as DBDeviceArrival, Category as DBCategory, MedicalDevice as DBMedicalDevice, Shipment as DBShipment, ShipmentItem as DBShipmentItem, Notification as DBNotification
+from database import SessionLocal, get_db, create_tables, engine, User as DBUser, Branch as DBBranch, Medicine as DBMedicine, Employee as DBEmployee, Patient as DBPatient, Transfer as DBTransfer, DispensingRecord as DBDispensingRecord, DispensingItem as DBDispensingItem, Arrival as DBArrival, DeviceArrival as DBDeviceArrival, Category as DBCategory, MedicalDevice as DBMedicalDevice, Shipment as DBShipment, ShipmentItem as DBShipmentItem, Notification as DBNotification
 from schemas import *
 from typing import List, Optional
 from datetime import datetime
@@ -121,6 +121,25 @@ def ensure_schema_patches():
             )
 
 
+def ensure_medicines_category_fk():
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE IF NOT EXISTS public.medicines ADD COLUMN IF NOT EXISTS category_id varchar"
+        )
+        conn.exec_driver_sql(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_medicines_category') THEN
+                ALTER TABLE public.medicines
+                  ADD CONSTRAINT fk_medicines_category
+                  FOREIGN KEY (category_id) REFERENCES public.categories(id) ON DELETE SET NULL;
+              END IF;
+            END $$;
+            """
+        )
+
+
 # Create FastAPI app
 app = FastAPI(title="Warehouse Management System")
 
@@ -135,60 +154,44 @@ app.add_middleware(
 
 # Create tables on startup
 @app.on_event("startup")
-async def startup_event():
+def startup_event():
     create_tables()
-    # Create default admin user if not exists
-    db = next(get_db())
-    admin_user = db.query(DBUser).filter(DBUser.login == "admin").first()
-    if not admin_user:
-        admin_user = DBUser(
-            id="admin",
-            login="admin",
-            password="admin",
-            role="admin"
-        )
-        db.add(admin_user)
-        db.commit()
-    
-    # Create default categories
-    medicine_category = db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").first()
-    if not medicine_category:
-        medicine_category = DBCategory(
-            id=str(uuid.uuid4()),
-            name="Общие лекарства",
-            description="Общая категория лекарств",
-            type="medicine"
-        )
-        db.add(medicine_category)
-    
-    device_category = db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").first()
-    if not device_category:
-        device_category = DBCategory(
-            id=str(uuid.uuid4()),
-            name="Общие ИМН", 
-            description="Общая категория изделий медицинского назначения",
-            type="medical_device"
-        )
-        db.add(device_category)
-        
-    db.commit()
+    db = SessionLocal()
+    try:
+        admin = db.query(DBUser).filter(DBUser.login == "admin").first()
+        if not admin:
+            admin = DBUser(id="admin", login="admin", password="admin", role="admin")
+            db.add(admin); db.commit()
 
-    # Apply schema patches and constraints
-    ensure_schema_patches()
+        if not db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").first():
+            db.add(DBCategory(id=str(uuid.uuid4()), name="Общие лекарства",
+                              description="Общая категория лекарств", type="medicine"))
+        if not db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").first():
+            db.add(DBCategory(id=str(uuid.uuid4()), name="Общие ИМН",
+                              description="Общая категория изделий медицинского назначения", type="medical_device"))
+        db.commit()
+
+        try:
+            ensure_medicines_category_fk()
+        except Exception:
+            pass
+        try:
+            ensure_schema_patches()
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 # Auth endpoints
 @app.post("/auth/login", response_model=LoginResponse)
-async def login(login_data: UserLogin, db: Session = Depends(get_db)):
-    # Check user login
-    db_user = db.query(DBUser).filter(DBUser.login == login_data.login, DBUser.password == login_data.password).first()
-    if db_user:
-        user = User.model_validate(db_user)
-        return LoginResponse(
-            user=user,
-            token=f"token_{db_user.id}"
-        )
-    
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(DBUser).filter(
+        DBUser.login == login_data.login,
+        DBUser.password == login_data.password
+    ).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {"user": User.model_validate(user), "token": f"token_{user.id}"}
 
 # User endpoints
 @app.get("/users", response_model=List[User])
