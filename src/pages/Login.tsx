@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { storage } from '@/utils/storage';
-import { apiService, ApiError } from '@/utils/api';
+import { apiService } from '@/utils/api';
 import { toast } from '@/hooks/use-toast';
 
 const Login: React.FC = () => {
@@ -32,12 +32,7 @@ const Login: React.FC = () => {
         }
       }
     } catch (e: any) {
-      const msg =
-        e instanceof ApiError
-          ? e.message
-          : e?.name === 'AbortError'
-            ? 'Request timed out'
-            : 'Network error: backend unavailable';
+      const msg = e?.message || 'Network error: backend unavailable';
       toast({ title: 'Ошибка входа', description: msg, variant: 'destructive' });
     } finally {
       setLoading(false);

@@ -1,42 +1,5 @@
-const strip = (s: string) => {
-  let r = s;
-  while (r.endsWith('/')) r = r.slice(0, -1);
-  return r;
-};
-const isDev = import.meta.env.DEV;
-
-function resolveBaseUrl() {
-  const env = (import.meta.env.VITE_API_BASE_URL ?? '').trim();
-  if (isDev) return '/api';
-  if (env) return strip(env);
-  const proto = window.location.protocol;
-  const host = window.location.hostname;
-  const port = import.meta.env.VITE_API_PORT ?? (proto === 'https:' ? '443' : '8000');
-  return `${proto}//${host}:${port}`;
-}
-
-export const API_BASE_URL = resolveBaseUrl();
-console.info('API_BASE_URL=', API_BASE_URL);
-
-export class ApiError extends Error {
-  status: number;
-  body: any;
-  constructor(status: number, body: any, message?: string) {
-    super(message ?? body?.detail ?? `HTTP ${status}`);
-    this.status = status;
-    this.body = body;
-  }
-}
-
-async function fetchWithTimeout(input: RequestInfo, init: RequestInit = {}, ms = 15000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), ms);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
-}
+const API_BASE_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '';
 
 interface LoginData {
   login: string;
@@ -45,15 +8,30 @@ interface LoginData {
 
 class ApiService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<{ data: T }> {
-    const url = `${API_BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
-    const res = await fetchWithTimeout(url, {
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+    const res = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+      credentials: 'include',
       ...options,
     });
-    const ct = res.headers.get('content-type') || '';
-    const data = ct.includes('application/json') ? await res.json() : await res.text();
-    if (!res.ok) throw new ApiError(res.status, data);
-    return { data: data as T };
+
+    if (!res.ok) {
+      let errText = `${res.status} ${res.statusText}`;
+      try {
+        const body = await res.json();
+        errText = body?.detail || errText;
+      } catch {}
+      throw new Error(errText);
+    }
+    try {
+      return { data: (await res.json()) as T };
+    } catch {
+      return { data: {} as T };
+    }
   }
 
   // Auth
@@ -460,3 +438,4 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
+
