@@ -7,7 +7,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { apiService } from "@/utils/api";
-import { asArray } from "@/lib/asArray";
 import { CalendarIcon, Download, BarChart3, TrendingUp, Users, Package } from "lucide-react";
 import * as XLSX from 'xlsx';
 import { format } from "date-fns";
@@ -24,10 +23,6 @@ const Analytics = () => {
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
 
-  const branchesArr = asArray(branches);
-  const byMedicine = asArray(analyticsData?.byMedicine);
-  const byPatient = asArray(analyticsData?.byPatient);
-
   useEffect(() => {
     fetchBranches();
   }, []);
@@ -36,7 +31,7 @@ const Analytics = () => {
     try {
       const response = await apiService.getBranches();
       if (response.data) {
-        setBranches(asArray(response.data));
+        setBranches(response.data);
       }
     } catch (error) {
       console.error('Error fetching branches:', error);
@@ -89,19 +84,19 @@ const Analytics = () => {
       ['Всего лекарств отдано', analyticsData.totalMedicinesDispensed || 0],
       ['Всего ИМН отдано', analyticsData.totalDevicesDispensed || 0],
       ['Период', `${selectedMonth}/${selectedYear}`],
-      ['Филиал', selectedBranch ? branchesArr.find(b => b.id === selectedBranch)?.name || 'Неизвестно' : 'Все филиалы']
+      ['Филиал', selectedBranch ? branches.find(b => b.id === selectedBranch)?.name || 'Неизвестно' : 'Все филиалы']
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, ws, 'Общая аналитика');
 
     // Dispensings by medicine
-    if (byMedicine.length > 0) {
+    if (analyticsData.byMedicine && analyticsData.byMedicine.length > 0) {
       const medicineData = [
         ['Отдачи по лекарствам'],
         ['Лекарство', 'Количество отдач', 'Общее количество']
       ];
-      byMedicine.forEach((item: any) => {
+      analyticsData.byMedicine.forEach((item: any) => {
         medicineData.push([item.name, item.dispensings, item.totalQuantity]);
       });
       
@@ -110,12 +105,12 @@ const Analytics = () => {
     }
 
     // Dispensings by patient
-    if (byPatient.length > 0) {
+    if (analyticsData.byPatient && analyticsData.byPatient.length > 0) {
       const patientData = [
         ['Отдачи по пациентам'],
         ['Пациент', 'Количество визитов', 'Общее количество препаратов']
       ];
-      byPatient.forEach((item: any) => {
+      analyticsData.byPatient.forEach((item: any) => {
         patientData.push([`${item.firstName} ${item.lastName}`, item.visits, item.totalItems]);
       });
       
@@ -123,7 +118,7 @@ const Analytics = () => {
       XLSX.utils.book_append_sheet(wb, ws3, 'По пациентам');
     }
 
-    const fileName = `analytics_${selectedMonth}_${selectedYear}${selectedBranch ? `_${branchesArr.find(b => b.id === selectedBranch)?.name}` : ''}.xlsx`;
+    const fileName = `analytics_${selectedMonth}_${selectedYear}${selectedBranch ? `_${branches.find(b => b.id === selectedBranch)?.name}` : ''}.xlsx`;
     XLSX.writeFile(wb, fileName);
     
     toast({
@@ -133,7 +128,7 @@ const Analytics = () => {
   };
 
   const getBranchName = (branchId: string) => {
-    const branch = branchesArr.find(b => b.id === branchId);
+    const branch = branches.find(b => b.id === branchId);
     return branch ? branch.name : 'Неизвестный филиал';
   };
 
@@ -164,7 +159,7 @@ const Analytics = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Все филиалы</SelectItem>
-                  {branchesArr.map((branch) => (
+                  {branches.map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
                       {branch.name}
                     </SelectItem>
@@ -313,14 +308,14 @@ const Analytics = () => {
           </div>
 
           {/* Top Medicines */}
-          {byMedicine.length > 0 ? (
+          {analyticsData.byMedicine && analyticsData.byMedicine.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Топ лекарств по отдачам</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {byMedicine.slice(0, 10).map((medicine: any, index: number) => (
+                  {analyticsData.byMedicine.slice(0, 10).map((medicine: any, index: number) => (
                     <div key={index} className="flex justify-between items-center p-3 bg-muted rounded">
                       <div>
                         <span className="font-medium">{medicine.name}</span>
@@ -336,26 +331,17 @@ const Analytics = () => {
                 </div>
               </CardContent>
             </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Топ лекарств по отдачам</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground text-sm">Нет данных</p>
-              </CardContent>
-            </Card>
           )}
 
           {/* Top Patients */}
-          {byPatient.length > 0 ? (
+          {analyticsData.byPatient && analyticsData.byPatient.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Топ пациентов по визитам</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {byPatient.slice(0, 10).map((patient: any, index: number) => (
+                  {analyticsData.byPatient.slice(0, 10).map((patient: any, index: number) => (
                     <div key={index} className="flex justify-between items-center p-3 bg-muted rounded">
                       <div>
                         <span className="font-medium">{patient.firstName} {patient.lastName}</span>
@@ -369,15 +355,6 @@ const Analytics = () => {
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Топ пациентов по визитам</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground text-sm">Нет данных</p>
               </CardContent>
             </Card>
           )}

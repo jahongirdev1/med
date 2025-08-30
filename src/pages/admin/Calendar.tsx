@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '@/utils/api';
-import { asArray } from '@/lib/asArray';
 import { Calendar as CalendarIcon, Package, Users, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,9 +13,6 @@ const AdminCalendar: React.FC = () => {
   const [selectedBranch, setSelectedBranch] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(true);
-
-  const branchesArr = asArray(branches);
-  const dispensingsArr = asArray(dispensings);
 
   useEffect(() => {
     fetchBranches();
@@ -32,7 +28,7 @@ const AdminCalendar: React.FC = () => {
     try {
       const response = await apiService.getBranches();
       if (response.data) {
-        setBranches(asArray(response.data));
+        setBranches(response.data);
       }
     } catch (error) {
       console.error('Error fetching branches:', error);
@@ -44,9 +40,8 @@ const AdminCalendar: React.FC = () => {
     try {
       const response = await apiService.getDispensingRecords(selectedBranch || undefined);
       if (response.data) {
-        const dataArr = asArray(response.data);
         // Filter dispensings by selected date
-        const filtered = dataArr.filter((dispensing: any) => {
+        const filtered = response.data.filter((dispensing: any) => {
           const dispensingDate = new Date(dispensing.date).toISOString().split('T')[0];
           return dispensingDate === selectedDate;
         });
@@ -61,16 +56,16 @@ const AdminCalendar: React.FC = () => {
   };
 
   const getBranchName = (branchId: string) => {
-    const branch = branchesArr.find(b => b.id === branchId);
+    const branch = branches.find(b => b.id === branchId);
     return branch?.name || 'Главный склад';
   };
 
   const getTotalMedicinesDispensed = () => {
-    return dispensingsArr.reduce((total, dispensing) => total + (Number(dispensing.quantity) || 0), 0);
+    return dispensings.reduce((total, dispensing) => total + dispensing.quantity, 0);
   };
 
   const getUniquePatientsCount = () => {
-    const uniquePatients = new Set(dispensingsArr.map(d => d.patient_id));
+    const uniquePatients = new Set(dispensings.map(d => d.patient_id));
     return uniquePatients.size;
   };
 
@@ -107,7 +102,7 @@ const AdminCalendar: React.FC = () => {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dispensingsArr.length}</div>
+            <div className="text-2xl font-bold">{dispensings.length}</div>
             <p className="text-xs text-muted-foreground">на выбранную дату</p>
           </CardContent>
         </Card>
@@ -146,7 +141,7 @@ const AdminCalendar: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Все филиалы</SelectItem>
-                  {branchesArr.map((branch) => (
+                  {branches.map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
                       {branch.name}
                     </SelectItem>
@@ -198,9 +193,9 @@ const AdminCalendar: React.FC = () => {
         <CardContent>
           {loading ? (
             <div className="text-center py-8">Загрузка...</div>
-          ) : dispensingsArr.length > 0 ? (
+          ) : dispensings.length > 0 ? (
             <div className="space-y-4">
-              {dispensingsArr.map((dispensing) => (
+              {dispensings.map((dispensing) => (
                 <div key={dispensing.id} className="p-4 border rounded-lg">
                   <div className="flex justify-between items-start">
                     <div>
