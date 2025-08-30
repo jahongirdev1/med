@@ -1,7 +1,7 @@
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ Base = declarative_base()
 # Database Models
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(String, primary_key=True)
     login = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
@@ -169,6 +169,7 @@ class Notification(Base):
     message = Column(String, nullable=False)
     is_read = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 # Database dependency
 def get_db():

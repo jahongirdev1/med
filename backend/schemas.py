@@ -9,8 +9,10 @@ class UserBase(BaseModel):
     role: str
     branch_name: Optional[str] = None
 
+
 class UserCreate(UserBase):
     password: str
+
 
 class UserUpdate(BaseModel):
     login: Optional[str] = None
@@ -18,10 +20,30 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     branch_name: Optional[str] = None
 
+
 class User(UserBase):
     id: str
-    
-    model_config = ConfigDict(from_attributes=True)
+    password: str
+
+    @classmethod
+    def model_validate(cls, obj):
+        return cls.model_construct(
+            id=obj.id,
+            login=obj.login,
+            password=obj.password,
+            role=obj.role,
+            branch_name=getattr(obj, "branch_name", None),
+        )
+
+
+class UserLogin(BaseModel):
+    login: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    user: User
+    token: str
 
 # Branch schemas
 class BranchBase(BaseModel):
