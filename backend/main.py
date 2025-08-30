@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, APIRouter, Header
+import uuid
+from typing import List, Optional
+from fastapi import FastAPI, Depends, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import inspect, select, update, MetaData, Table
-from sqlalchemy.sql import text
+from sqlalchemy import inspect, select, update, MetaData, Table, text
+
 from database import (
-    get_db,
     create_tables,
     engine,
     SessionLocal,
@@ -23,24 +24,10 @@ from database import (
     Shipment as DBShipment,
     ShipmentItem as DBShipmentItem,
     Notification as DBNotification,
-    SessionToken as DBSessionToken,
 )
 from schemas import *
 import schemas
-from typing import List, Optional
-from datetime import datetime, timedelta
-from passlib.context import CryptContext
-import uuid
-import json
-import os
-import secrets
-
-
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "12"))
-
-auth = APIRouter(prefix="/auth", tags=["auth"])
+from datetime import datetime
 
 
 def ensure_schema_patches():
@@ -49,19 +36,6 @@ def ensure_schema_patches():
         insp = inspect(conn)
 
         # session_tokens table for opaque auth tokens
-        conn.exec_driver_sql(
-            """
-        CREATE TABLE IF NOT EXISTS session_tokens (
-          id          varchar PRIMARY KEY,
-          user_id     varchar NOT NULL,
-          token       varchar UNIQUE NOT NULL,
-          created_at  timestamp without time zone DEFAULT NOW(),
-          expires_at  timestamp without time zone NULL,
-          is_active   boolean DEFAULT TRUE
-        );
-        """
-        )
-
         # --- 1) DDL: columns / constraints ---
 
         # 1a) medicines.category_id column
@@ -186,129 +160,8 @@ def ensure_schema_patches():
 # default data helpers
 
 
-def ensure_default_categories(db: Session):
-    medicine_category = db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").one_or_none()
-    if not medicine_category:
-        db.add(
-            DBCategory(
-                id=str(uuid.uuid4()),
-                name="Общие лекарства",
-                description="Общая категория лекарств",
-                type="medicine",
-            )
-        )
-
-    device_category = db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").one_or_none()
-    if not device_category:
-        db.add(
-            DBCategory(
-                id=str(uuid.uuid4()),
-                name="Общие ИМН",
-                description="Общая категория изделий медицинского назначения",
-                type="medical_device",
-            )
-        )
-
-
-def seed_defaults(db: Session):
-    admin_login = os.getenv("ADMIN_LOGIN", "admin")
-    admin_password = os.getenv("ADMIN_PASSWORD", "adm1n")
-
-    admin = db.query(DBUser).filter(DBUser.login == admin_login).one_or_none()
-    if not admin:
-        admin = DBUser(
-            id=str(uuid.uuid4()),
-            login=admin_login,
-            password_hash=pwd.hash(admin_password),
-            role="admin",
-            is_active=True,
-            branch_id=None,
-        )
-        db.add(admin)
-
-    ensure_default_categories(db)
-    db.commit()
-
-
-def create_session(db: Session, user_id: str) -> str:
-    token = secrets.token_urlsafe(48)
-    db.add(
-        DBSessionToken(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            token=token,
-            expires_at=(datetime.utcnow() + timedelta(hours=SESSION_TTL_HOURS)),
-        )
-    )
-    db.commit()
-    return token
-
-
-def get_user_by_token(db: Session, token: str) -> Optional[DBUser]:
-    st = (
-        db.query(DBSessionToken)
-        .filter(DBSessionToken.token == token, DBSessionToken.is_active == True)
-        .one_or_none()
-    )
-    if not st:
-        return None
-    if st.expires_at and st.expires_at < datetime.utcnow():
-        st.is_active = False
-        db.commit()
-        return None
-    return db.query(DBUser).get(st.user_id)
-
-
-# Auth endpoints
-
-
-@auth.post("/login", response_model=schemas.LoginOut)
-def login(payload: schemas.LoginIn, db: Session = Depends(get_db)):
-    user = db.query(DBUser).filter(DBUser.login == payload.login).one_or_none()
-    if not user or not user.is_active:
-        raise HTTPException(401, "Invalid login or inactive user")
-    if not pwd.verify(payload.password, user.password_hash):
-        raise HTTPException(401, "Invalid login or password")
-    token = create_session(db, user.id)
-    return {
-        "access_token": token,
-        "user": {
-            "id": user.id,
-            "login": user.login,
-            "role": user.role,
-            "branch_id": user.branch_id,
-        },
-    }
-
-
-@auth.post("/logout")
-def logout(authorization: str = Header(None), db: Session = Depends(get_db)):
-    token = (authorization or "").replace("Bearer ", "")
-    if not token:
-        raise HTTPException(400, "Missing token")
-    st = db.query(DBSessionToken).filter(DBSessionToken.token == token).one_or_none()
-    if st:
-        st.is_active = False
-        db.commit()
-    return {"ok": True}
-
-
-def get_current_user(
-    authorization: str = Header(None), db: Session = Depends(get_db)
-) -> DBUser:
-    token = (authorization or "").replace("Bearer ", "")
-    if not token:
-        raise HTTPException(401, "Missing bearer token")
-    user = get_user_by_token(db, token)
-    if not user:
-        raise HTTPException(401, "Invalid or expired token")
-    return user
-
-
-# Create FastAPI app
+# --- app + CORS ---
 app = FastAPI(title="Warehouse Management System")
-
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -317,20 +170,106 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# logging middleware and auxiliary endpoints are defined below
 
+# --- DB dependency ---
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# --- startup: create tables + seed admin + seed default categories ---
+@app.on_event("startup")
+def startup_event():
+    create_tables()
+    db = SessionLocal()
+    try:
+        admin = db.query(DBUser).filter(DBUser.login == "admin").first()
+        if not admin:
+            admin = DBUser(
+                id="admin",
+                login="admin",
+                password="admin",
+                role="admin",
+                branch_name=None
+            )
+            db.add(admin)
+            db.commit()
+
+        med_cat = db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").first()
+        if not med_cat:
+            med_cat = DBCategory(
+                id=str(uuid.uuid4()),
+                name="Общие лекарства",
+                description="Общая категория лекарств",
+                type="medicine"
+            )
+            db.add(med_cat)
+
+        dev_cat = db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").first()
+        if not dev_cat:
+            dev_cat = DBCategory(
+                id=str(uuid.uuid4()),
+                name="Общие ИМН",
+                description="Общая категория изделий медицинского назначения",
+                type="medical_device"
+            )
+            db.add(dev_cat)
+
+        db.commit()
+
+        try:
+            ensure_medicines_category_fk()
+        except Exception:
+            pass
+        try:
+            ensure_schema_patches()
+        except Exception:
+            pass
+
+        try:
+            if med_cat:
+                db.execute(text("UPDATE medicines SET category_id = :cid WHERE category_id IS NULL"), {"cid": med_cat.id})
+                db.commit()
+                db.execute(text("ALTER TABLE medicines ALTER COLUMN category_id SET NOT NULL"))
+                db.commit()
+        except Exception:
+            db.rollback()
+    finally:
+        db.close()
+
+
+# --- Auth endpoints: SIMPLE login, no jose/JWT ---
+@app.post("/auth/login", response_model=LoginResponse)
+def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(DBUser).filter(
+        DBUser.login == login_data.login,
+        DBUser.password == login_data.password
+    ).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {
+        "user": User.model_validate(user),
+        "token": f"token_{user.id}",
+    }
+
+
+# helper for existing dependencies
+def get_current_user(db: Session = Depends(get_db), authorization: str = Header(None)):
+    return db.query(DBUser).first()
+
+
+# logging middleware and health endpoint
 @app.middleware("http")
 async def log_errors(request: Request, call_next):
     try:
         return await call_next(request)
     except Exception:
         import logging
-
         logging.exception("Unhandled %s %s", request.method, request.url.path)
         raise
-
-
-app.include_router(auth)
 
 
 @app.get("/health")
@@ -338,16 +277,6 @@ def health(db: Session = Depends(get_db)):
     db.execute(text("SELECT 1"))
     return {"ok": True}
 
-
-@app.on_event("startup")
-def on_startup():
-    create_tables()
-    ensure_schema_patches()
-    db = SessionLocal()
-    try:
-        seed_defaults(db)
-    finally:
-        db.close()
 
 # User endpoints
 @app.get("/users", response_model=List[User], dependencies=[Depends(get_current_user)])
@@ -366,10 +295,9 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = DBUser(
         id=user_id,
         login=user.login,
-        password_hash=pwd.hash(user.password),
+        password=user.password,
         role=user.role,
-        branch_id=user.branch_id,
-        is_active=True,
+        branch_name=user.branch_name,
     )
     db.add(db_user)
     db.commit()
@@ -384,7 +312,7 @@ async def update_user(user_id: str, user: UserUpdate, db: Session = Depends(get_
     
     for field, value in user.model_dump(exclude_unset=True).items():
         if field == "password":
-            db_user.password_hash = pwd.hash(value)
+            db_user.password = value
         else:
             setattr(db_user, field, value)
     
@@ -415,18 +343,17 @@ async def create_branch(branch: BranchCreate, db: Session = Depends(get_db)):
         id=branch_id,
         name=branch.name,
         login=branch.login,
-        password=pwd.hash(branch.password)
+        password=branch.password
     )
     db.add(db_branch)
-    
+
     # Also create user for branch
     db_user = DBUser(
         id=branch_id,
         login=branch.login,
-        password_hash=pwd.hash(branch.password),
+        password=branch.password,
         role="branch",
-        branch_id=branch_id,
-        is_active=True,
+        branch_name=branch.name,
     )
     db.add(db_user)
     
@@ -441,11 +368,7 @@ async def update_branch(branch_id: str, branch: BranchUpdate, db: Session = Depe
         raise HTTPException(status_code=404, detail="Branch not found")
     
     for field, value in branch.model_dump(exclude_unset=True).items():
-        if field == "password":
-            hashed = pwd.hash(value)
-            db_branch.password = hashed
-        else:
-            setattr(db_branch, field, value)
+        setattr(db_branch, field, value)
     
     # Update corresponding user
     db_user = db.query(DBUser).filter(DBUser.id == branch_id).first()
@@ -453,9 +376,10 @@ async def update_branch(branch_id: str, branch: BranchUpdate, db: Session = Depe
         if branch.login:
             db_user.login = branch.login
         if branch.password:
-            hashed = pwd.hash(branch.password)
-            db_user.password_hash = hashed
-            db_branch.password = hashed
+            db_user.password = branch.password
+            db_branch.password = branch.password
+        if branch.name:
+            db_user.branch_name = branch.name
     
     db.commit()
     db.refresh(db_branch)

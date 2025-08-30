@@ -1,5 +1,5 @@
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -21,10 +21,9 @@ class User(Base):
 
     id = Column(String, primary_key=True)
     login = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    password = Column(String, nullable=False)
     role = Column(String, nullable=False)
-    branch_id = Column(String, ForeignKey("branches.id"), nullable=True)
-    is_active = Column(Boolean, default=True)
+    branch_name = Column(String, nullable=True)
 
 class Branch(Base):
     __tablename__ = "branches"
@@ -171,16 +170,6 @@ class Notification(Base):
     is_read = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-
-class SessionToken(Base):
-    __tablename__ = "session_tokens"
-
-    id = Column(String, primary_key=True)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    token = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    expires_at = Column(DateTime, nullable=True)
-    is_active = Column(Boolean, default=True)
 
 # Database dependency
 def get_db():
