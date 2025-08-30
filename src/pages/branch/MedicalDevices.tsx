@@ -5,6 +5,7 @@ import { Package, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const BranchMedicalDevices: React.FC = () => {
   const currentUser = storage.getCurrentUser();
@@ -14,6 +15,9 @@ const BranchMedicalDevices: React.FC = () => {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<any>(null);
+  const [lastReceipt, setLastReceipt] = useState<any>(null);
 
   useEffect(() => {
     fetchData();
@@ -45,6 +49,17 @@ const BranchMedicalDevices: React.FC = () => {
     getCategoryName(device.category_id).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const handleCardClick = async (device: any) => {
+    setSelectedDevice(device);
+    try {
+      const res = await apiService.getLastDeviceReceipt(branchId, device.id);
+      setLastReceipt(res.data);
+    } catch {
+      setLastReceipt(null);
+    }
+    setReceiptDialogOpen(true);
+  };
+
   if (loading) {
     return <div className="flex justify-center items-center h-64">Загрузка ИМН...</div>;
   }
@@ -68,7 +83,7 @@ const BranchMedicalDevices: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredDevices.map((device) => (
-          <Card key={device.id}>
+          <Card key={device.id} onClick={() => handleCardClick(device)} className="cursor-pointer">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">{device.name}</CardTitle>
               <Badge variant="secondary">{getCategoryName(device.category_id)}</Badge>
@@ -99,6 +114,22 @@ const BranchMedicalDevices: React.FC = () => {
           </p>
         </div>
       )}
+
+      <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Последнее поступление</DialogTitle>
+          </DialogHeader>
+          {lastReceipt ? (
+            <div className="space-y-2">
+              <p>Количество: {lastReceipt.quantity}</p>
+              <p>Время: {new Date(lastReceipt.time).toLocaleString()}</p>
+            </div>
+          ) : (
+            <p>Данных нет</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
