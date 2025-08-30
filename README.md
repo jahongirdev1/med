@@ -36,6 +36,19 @@ npm i
 npm run dev
 ```
 
+### API configuration
+
+The frontend communicates with a backend server. During development it expects
+the backend to run on `http://localhost:8000`. For production deployments or if
+your backend runs elsewhere, create a `.env` file in the project root and set
+
+```bash
+VITE_API_BASE_URL=http://your-backend-host:8000
+```
+
+When `VITE_API_BASE_URL` is not provided the application falls back to
+`http://localhost:8000`.
+
 **Edit a file directly in GitHub**
 
 - Navigate to the desired file(s).
