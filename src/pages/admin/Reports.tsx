@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiService } from '@/utils/api';
+import { asArray } from '@/lib/asArray';
 import { Download, FileText, Eye, BarChart, Package, Users, Activity, TrendingUp } from 'lucide-react';
 import { Branch } from '@/types';
 import * as XLSX from 'xlsx';
@@ -24,6 +25,8 @@ const Reports: React.FC = () => {
   const [selectedItemDetails, setSelectedItemDetails] = useState<any>(null);
   const { toast } = useToast();
 
+  const branchesArr = asArray(branches);
+
   useEffect(() => {
     fetchBranches();
   }, []);
@@ -31,7 +34,7 @@ const Reports: React.FC = () => {
   const fetchBranches = async () => {
     try {
       const result = await apiService.getBranches();
-      if (result.data) setBranches(result.data);
+      if (result.data) setBranches(asArray(result.data));
     } catch (error) {
       toast({
         title: "Ошибка",
@@ -70,7 +73,7 @@ const Reports: React.FC = () => {
       });
 
       if (result.data) {
-        setReportData(result.data);
+        setReportData(asArray(result.data));
         toast({
           title: "Успешно",
           description: "Отчет сгенерирован"
@@ -88,7 +91,8 @@ const Reports: React.FC = () => {
   };
 
   const exportToExcel = () => {
-    if (reportData.length === 0) {
+    const data = asArray(reportData);
+    if (data.length === 0) {
       toast({
         title: "Ошибка",
         description: "Нет данных для экспорта",
@@ -97,7 +101,7 @@ const Reports: React.FC = () => {
       return;
     }
 
-    const ws = XLSX.utils.json_to_sheet(reportData);
+    const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report");
     
@@ -127,7 +131,7 @@ const Reports: React.FC = () => {
   };
 
   const getBranchName = (branchId: string) => {
-    const branch = branches.find(b => b.id === branchId);
+    const branch = branchesArr.find(b => b.id === branchId);
     return branch?.name || 'Главный склад';
   };
 
@@ -137,9 +141,10 @@ const Reports: React.FC = () => {
   };
 
   const renderReportTable = () => {
-    if (reportData.length === 0) return null;
+    const data = asArray(reportData);
+    if (data.length === 0) return <p className="text-muted-foreground text-sm">Нет данных</p>;
 
-    const firstItem = reportData[0];
+    const firstItem = data[0];
     const columns = Object.keys(firstItem);
 
     return (
@@ -153,12 +158,12 @@ const Reports: React.FC = () => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {reportData.map((item, index) => (
+          {data.map((item, index) => (
             <TableRow key={index}>
               {columns.map((column) => (
                 <TableCell key={column}>
-                  {typeof item[column] === 'object' 
-                    ? JSON.stringify(item[column]) 
+                  {typeof item[column] === 'object'
+                    ? JSON.stringify(item[column])
                     : item[column]?.toString() || '—'
                   }
                 </TableCell>
@@ -224,7 +229,7 @@ const Reports: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Все филиалы</SelectItem>
-                  {branches.map((branch) => (
+                  {branchesArr.map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
                       {branch.name}
                     </SelectItem>
@@ -262,7 +267,7 @@ const Reports: React.FC = () => {
               {loading ? 'Генерируется...' : 'Сгенерировать отчет'}
             </Button>
             
-            {reportData.length > 0 && (
+            {asArray(reportData).length > 0 && (
               <Button variant="outline" onClick={exportToExcel}>
                 <Download className="h-4 w-4 mr-2" />
                 Excel
@@ -272,7 +277,7 @@ const Reports: React.FC = () => {
         </CardContent>
       </Card>
 
-      {reportData.length > 0 && (
+      {asArray(reportData).length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -310,7 +315,7 @@ const Reports: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {reportData.length === 0 && !loading && (
+      {asArray(reportData).length === 0 && !loading && (
         <Card>
           <CardContent className="text-center py-8">
             <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
