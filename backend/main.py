@@ -1,33 +1,13 @@
-import uuid
-from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, Request, Header
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import inspect, select, update, MetaData, Table, text
-
-from database import (
-    create_tables,
-    engine,
-    SessionLocal,
-    User as DBUser,
-    Branch as DBBranch,
-    Medicine as DBMedicine,
-    Employee as DBEmployee,
-    Patient as DBPatient,
-    Transfer as DBTransfer,
-    DispensingRecord as DBDispensingRecord,
-    DispensingItem as DBDispensingItem,
-    Arrival as DBArrival,
-    DeviceArrival as DBDeviceArrival,
-    Category as DBCategory,
-    MedicalDevice as DBMedicalDevice,
-    Shipment as DBShipment,
-    ShipmentItem as DBShipmentItem,
-    Notification as DBNotification,
-)
+from sqlalchemy import inspect, select, update, MetaData, Table
+from database import get_db, create_tables, engine, User as DBUser, Branch as DBBranch, Medicine as DBMedicine, Employee as DBEmployee, Patient as DBPatient, Transfer as DBTransfer, DispensingRecord as DBDispensingRecord, DispensingItem as DBDispensingItem, Arrival as DBArrival, DeviceArrival as DBDeviceArrival, Category as DBCategory, MedicalDevice as DBMedicalDevice, Shipment as DBShipment, ShipmentItem as DBShipmentItem, Notification as DBNotification
 from schemas import *
-import schemas
+from typing import List, Optional
 from datetime import datetime
+import uuid
+import json
 
 
 def ensure_schema_patches():
@@ -35,7 +15,6 @@ def ensure_schema_patches():
     with engine.begin() as conn:
         insp = inspect(conn)
 
-        # session_tokens table for opaque auth tokens
         # --- 1) DDL: columns / constraints ---
 
         # 1a) medicines.category_id column
@@ -98,13 +77,6 @@ def ensure_schema_patches():
             """
         )
 
-        # shipments.accepted_at column
-        ship_cols = [c["name"] for c in insp.get_columns("shipments")]
-        if "accepted_at" not in ship_cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE public.shipments ADD COLUMN accepted_at timestamp"
-            )
-
         # helpful indexes
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_categories_type ON public.categories(type);")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_med_category_id ON public.medicines(category_id);")
@@ -157,11 +129,10 @@ def ensure_schema_patches():
             )
 
 
-# default data helpers
-
-
-# --- app + CORS ---
+# Create FastAPI app
 app = FastAPI(title="Warehouse Management System")
+
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -170,121 +141,70 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# --- DB dependency ---
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# --- startup: create tables + seed admin + seed default categories ---
+# Create tables on startup
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
     create_tables()
-    db = SessionLocal()
-    try:
-        admin = db.query(DBUser).filter(DBUser.login == "admin").first()
-        if not admin:
-            admin = DBUser(
-                id="admin",
-                login="admin",
-                password="admin",
-                role="admin",
-                branch_name=None
-            )
-            db.add(admin)
-            db.commit()
-
-        med_cat = db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").first()
-        if not med_cat:
-            med_cat = DBCategory(
-                id=str(uuid.uuid4()),
-                name="Общие лекарства",
-                description="Общая категория лекарств",
-                type="medicine"
-            )
-            db.add(med_cat)
-
-        dev_cat = db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").first()
-        if not dev_cat:
-            dev_cat = DBCategory(
-                id=str(uuid.uuid4()),
-                name="Общие ИМН",
-                description="Общая категория изделий медицинского назначения",
-                type="medical_device"
-            )
-            db.add(dev_cat)
-
+    # Create default admin user if not exists
+    db = next(get_db())
+    admin_user = db.query(DBUser).filter(DBUser.login == "admin").first()
+    if not admin_user:
+        admin_user = DBUser(
+            id="admin",
+            login="admin",
+            password="admin",
+            role="admin"
+        )
+        db.add(admin_user)
         db.commit()
+    
+    # Create default categories
+    medicine_category = db.query(DBCategory).filter(DBCategory.name == "Общие лекарства").first()
+    if not medicine_category:
+        medicine_category = DBCategory(
+            id=str(uuid.uuid4()),
+            name="Общие лекарства",
+            description="Общая категория лекарств",
+            type="medicine"
+        )
+        db.add(medicine_category)
+    
+    device_category = db.query(DBCategory).filter(DBCategory.name == "Общие ИМН").first()
+    if not device_category:
+        device_category = DBCategory(
+            id=str(uuid.uuid4()),
+            name="Общие ИМН", 
+            description="Общая категория изделий медицинского назначения",
+            type="medical_device"
+        )
+        db.add(device_category)
+        
+    db.commit()
 
-        try:
-            ensure_medicines_category_fk()
-        except Exception:
-            pass
-        try:
-            ensure_schema_patches()
-        except Exception:
-            pass
+    # Apply schema patches and constraints
+    ensure_schema_patches()
 
-        try:
-            if med_cat:
-                db.execute(text("UPDATE medicines SET category_id = :cid WHERE category_id IS NULL"), {"cid": med_cat.id})
-                db.commit()
-                db.execute(text("ALTER TABLE medicines ALTER COLUMN category_id SET NOT NULL"))
-                db.commit()
-        except Exception:
-            db.rollback()
-    finally:
-        db.close()
-
-
-# --- Auth endpoints: SIMPLE login, no jose/JWT ---
+# Auth endpoints
 @app.post("/auth/login", response_model=LoginResponse)
-def login(login_data: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(DBUser).filter(
-        DBUser.login == login_data.login,
-        DBUser.password == login_data.password
-    ).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {
-        "user": User.model_validate(user),
-        "token": f"token_{user.id}",
-    }
-
-
-# helper for existing dependencies
-def get_current_user(db: Session = Depends(get_db), authorization: str = Header(None)):
-    return db.query(DBUser).first()
-
-
-# logging middleware and health endpoint
-@app.middleware("http")
-async def log_errors(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception:
-        import logging
-        logging.exception("Unhandled %s %s", request.method, request.url.path)
-        raise
-
-
-@app.get("/health")
-def health(db: Session = Depends(get_db)):
-    db.execute(text("SELECT 1"))
-    return {"ok": True}
-
+async def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    # Check user login
+    db_user = db.query(DBUser).filter(DBUser.login == login_data.login, DBUser.password == login_data.password).first()
+    if db_user:
+        user = User.model_validate(db_user)
+        return LoginResponse(
+            user=user,
+            token=f"token_{db_user.id}"
+        )
+    
+    raise HTTPException(status_code=401, detail="Invalid credentials")
 
 # User endpoints
-@app.get("/users", response_model=List[User], dependencies=[Depends(get_current_user)])
+@app.get("/users", response_model=List[User])
 async def get_users(db: Session = Depends(get_db)):
     db_users = db.query(DBUser).all()
     return [User.model_validate(user) for user in db_users]
 
-@app.post("/users", response_model=User, dependencies=[Depends(get_current_user)])
+@app.post("/users", response_model=User)
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     # Check if user already exists
     existing_user = db.query(DBUser).filter(DBUser.login == user.login).first()
@@ -297,30 +217,27 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
         login=user.login,
         password=user.password,
         role=user.role,
-        branch_name=user.branch_name,
+        branch_name=user.branch_name
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return User.model_validate(db_user)
 
-@app.put("/users/{user_id}", response_model=User, dependencies=[Depends(get_current_user)])
+@app.put("/users/{user_id}", response_model=User)
 async def update_user(user_id: str, user: UserUpdate, db: Session = Depends(get_db)):
     db_user = db.query(DBUser).filter(DBUser.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
     
     for field, value in user.model_dump(exclude_unset=True).items():
-        if field == "password":
-            db_user.password = value
-        else:
-            setattr(db_user, field, value)
+        setattr(db_user, field, value)
     
     db.commit()
     db.refresh(db_user)
     return User.model_validate(db_user)
 
-@app.delete("/users/{user_id}", dependencies=[Depends(get_current_user)])
+@app.delete("/users/{user_id}")
 async def delete_user(user_id: str, db: Session = Depends(get_db)):
     user = db.query(DBUser).filter(DBUser.id == user_id).first()
     if not user:
@@ -331,12 +248,12 @@ async def delete_user(user_id: str, db: Session = Depends(get_db)):
     return {"message": "User deleted"}
 
 # Branch endpoints
-@app.get("/branches", response_model=List[Branch], dependencies=[Depends(get_current_user)])
+@app.get("/branches", response_model=List[Branch])
 async def get_branches(db: Session = Depends(get_db)):
     db_branches = db.query(DBBranch).all()
     return [Branch.model_validate(branch) for branch in db_branches]
 
-@app.post("/branches", response_model=Branch, dependencies=[Depends(get_current_user)])
+@app.post("/branches", response_model=Branch)
 async def create_branch(branch: BranchCreate, db: Session = Depends(get_db)):
     branch_id = str(uuid.uuid4())
     db_branch = DBBranch(
@@ -346,14 +263,14 @@ async def create_branch(branch: BranchCreate, db: Session = Depends(get_db)):
         password=branch.password
     )
     db.add(db_branch)
-
+    
     # Also create user for branch
     db_user = DBUser(
         id=branch_id,
         login=branch.login,
         password=branch.password,
         role="branch",
-        branch_name=branch.name,
+        branch_name=branch.name
     )
     db.add(db_user)
     
@@ -361,7 +278,7 @@ async def create_branch(branch: BranchCreate, db: Session = Depends(get_db)):
     db.refresh(db_branch)
     return Branch.model_validate(db_branch)
 
-@app.put("/branches/{branch_id}", response_model=Branch, dependencies=[Depends(get_current_user)])
+@app.put("/branches/{branch_id}", response_model=Branch)
 async def update_branch(branch_id: str, branch: BranchUpdate, db: Session = Depends(get_db)):
     db_branch = db.query(DBBranch).filter(DBBranch.id == branch_id).first()
     if not db_branch:
@@ -377,7 +294,6 @@ async def update_branch(branch_id: str, branch: BranchUpdate, db: Session = Depe
             db_user.login = branch.login
         if branch.password:
             db_user.password = branch.password
-            db_branch.password = branch.password
         if branch.name:
             db_user.branch_name = branch.name
     
@@ -385,7 +301,7 @@ async def update_branch(branch_id: str, branch: BranchUpdate, db: Session = Depe
     db.refresh(db_branch)
     return Branch.model_validate(db_branch)
 
-@app.delete("/branches/{branch_id}", dependencies=[Depends(get_current_user)])
+@app.delete("/branches/{branch_id}")
 async def delete_branch(branch_id: str, db: Session = Depends(get_db)):
     branch = db.query(DBBranch).filter(DBBranch.id == branch_id).first()
     if not branch:
@@ -401,7 +317,7 @@ async def delete_branch(branch_id: str, db: Session = Depends(get_db)):
     return {"message": "Branch deleted"}
 
 # Medicine endpoints
-@app.get("/medicines", response_model=List[Medicine], dependencies=[Depends(get_current_user)])
+@app.get("/medicines", response_model=List[Medicine])
 async def get_medicines(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id and branch_id != "null" and branch_id != "undefined":
         db_medicines = db.query(DBMedicine).filter(DBMedicine.branch_id == branch_id).all()
@@ -409,7 +325,7 @@ async def get_medicines(branch_id: Optional[str] = None, db: Session = Depends(g
         db_medicines = db.query(DBMedicine).filter(DBMedicine.branch_id.is_(None)).all()
     return [Medicine.model_validate(medicine) for medicine in db_medicines]
 
-@app.post("/medicines", response_model=Medicine, dependencies=[Depends(get_current_user)])
+@app.post("/medicines", response_model=Medicine)
 async def create_medicine(medicine: MedicineCreate, db: Session = Depends(get_db)):
     cat = db.query(DBCategory).filter(DBCategory.id == medicine.category_id).first()
     if not cat:
@@ -432,7 +348,7 @@ async def create_medicine(medicine: MedicineCreate, db: Session = Depends(get_db
     db.refresh(db_medicine)
     return Medicine.model_validate(db_medicine)
 
-@app.put("/medicines/{medicine_id}", response_model=Medicine, dependencies=[Depends(get_current_user)])
+@app.put("/medicines/{medicine_id}", response_model=Medicine)
 async def update_medicine(medicine_id: str, medicine: MedicineUpdate, db: Session = Depends(get_db)):
     db_medicine = db.query(DBMedicine).filter(DBMedicine.id == medicine_id).first()
     if not db_medicine:
@@ -452,7 +368,7 @@ async def update_medicine(medicine_id: str, medicine: MedicineUpdate, db: Sessio
     db.refresh(db_medicine)
     return Medicine.model_validate(db_medicine)
 
-@app.delete("/medicines/{medicine_id}", dependencies=[Depends(get_current_user)])
+@app.delete("/medicines/{medicine_id}")
 async def delete_medicine(medicine_id: str, db: Session = Depends(get_db)):
     medicine = db.query(DBMedicine).filter(DBMedicine.id == medicine_id).first()
     if not medicine:
@@ -463,7 +379,7 @@ async def delete_medicine(medicine_id: str, db: Session = Depends(get_db)):
     return {"message": "Medicine deleted"}
 
 # Medical Device endpoints
-@app.get("/medical_devices", response_model=List[MedicalDevice], dependencies=[Depends(get_current_user)])
+@app.get("/medical_devices", response_model=List[MedicalDevice])
 async def get_medical_devices(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id and branch_id != "null" and branch_id != "undefined":
         db_devices = db.query(DBMedicalDevice).filter(DBMedicalDevice.branch_id == branch_id).all()
@@ -471,7 +387,7 @@ async def get_medical_devices(branch_id: Optional[str] = None, db: Session = Dep
         db_devices = db.query(DBMedicalDevice).filter(DBMedicalDevice.branch_id.is_(None)).all()
     return [MedicalDevice.model_validate(device) for device in db_devices]
 
-@app.post("/medical_devices", response_model=MedicalDevice, dependencies=[Depends(get_current_user)])
+@app.post("/medical_devices", response_model=MedicalDevice)
 async def create_medical_device(device: MedicalDeviceCreate, db: Session = Depends(get_db)):
     cat = db.query(DBCategory).filter(DBCategory.id == device.category_id).first()
     if not cat:
@@ -495,7 +411,7 @@ async def create_medical_device(device: MedicalDeviceCreate, db: Session = Depen
     db.refresh(db_device)
     return MedicalDevice.model_validate(db_device)
 
-@app.put("/medical_devices/{device_id}", response_model=MedicalDevice, dependencies=[Depends(get_current_user)])
+@app.put("/medical_devices/{device_id}", response_model=MedicalDevice)
 async def update_medical_device(device_id: str, device: MedicalDeviceUpdate, db: Session = Depends(get_db)):
     db_device = db.query(DBMedicalDevice).filter(DBMedicalDevice.id == device_id).first()
     if not db_device:
@@ -517,7 +433,7 @@ async def update_medical_device(device_id: str, device: MedicalDeviceUpdate, db:
     db.refresh(db_device)
     return MedicalDevice.model_validate(db_device)
 
-@app.delete("/medical_devices/{device_id}", dependencies=[Depends(get_current_user)])
+@app.delete("/medical_devices/{device_id}")
 async def delete_medical_device(device_id: str, db: Session = Depends(get_db)):
     device = db.query(DBMedicalDevice).filter(DBMedicalDevice.id == device_id).first()
     if not device:
@@ -528,7 +444,7 @@ async def delete_medical_device(device_id: str, db: Session = Depends(get_db)):
     return {"message": "Medical device deleted"}
 
 # Category endpoints
-@app.get("/categories", response_model=List[dict], dependencies=[Depends(get_current_user)])
+@app.get("/categories", response_model=List[dict])
 async def get_categories(type: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(DBCategory)
     if type:
@@ -536,7 +452,7 @@ async def get_categories(type: Optional[str] = None, db: Session = Depends(get_d
     categories = query.all()
     return [{"id": cat.id, "name": cat.name, "description": cat.description, "type": cat.type} for cat in categories]
 
-@app.post("/categories", dependencies=[Depends(get_current_user)])
+@app.post("/categories")
 async def create_category(category: dict, db: Session = Depends(get_db)):
     category_id = str(uuid.uuid4())
     db_category = DBCategory(
@@ -550,7 +466,7 @@ async def create_category(category: dict, db: Session = Depends(get_db)):
     db.refresh(db_category)
     return {"id": db_category.id, "name": db_category.name, "description": db_category.description, "type": db_category.type}
 
-@app.put("/categories/{category_id}", dependencies=[Depends(get_current_user)])
+@app.put("/categories/{category_id}")
 async def update_category(category_id: str, category: dict, db: Session = Depends(get_db)):
     db_category = db.query(DBCategory).filter(DBCategory.id == category_id).first()
     if not db_category:
@@ -564,7 +480,7 @@ async def update_category(category_id: str, category: dict, db: Session = Depend
     db.refresh(db_category)
     return {"id": db_category.id, "name": db_category.name, "description": db_category.description, "type": db_category.type}
 
-@app.delete("/categories/{category_id}", dependencies=[Depends(get_current_user)])
+@app.delete("/categories/{category_id}")
 async def delete_category(category_id: str, db: Session = Depends(get_db)):
     category = db.query(DBCategory).filter(DBCategory.id == category_id).first()
     if not category:
@@ -584,7 +500,7 @@ async def delete_category(category_id: str, db: Session = Depends(get_db)):
     return {"message": "Category deleted"}
 
 # Employee endpoints
-@app.get("/employees", response_model=List[Employee], dependencies=[Depends(get_current_user)])
+@app.get("/employees", response_model=List[Employee])
 async def get_employees(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id and branch_id != "null" and branch_id != "undefined":
         db_employees = db.query(DBEmployee).filter(DBEmployee.branch_id == branch_id).all()
@@ -592,7 +508,7 @@ async def get_employees(branch_id: Optional[str] = None, db: Session = Depends(g
         db_employees = db.query(DBEmployee).filter(DBEmployee.branch_id.is_(None)).all()
     return [Employee.model_validate(employee) for employee in db_employees]
 
-@app.post("/employees", response_model=Employee, dependencies=[Depends(get_current_user)])
+@app.post("/employees", response_model=Employee)
 async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db)):
     employee_id = str(uuid.uuid4())
     db_employee = DBEmployee(
@@ -608,7 +524,7 @@ async def create_employee(employee: EmployeeCreate, db: Session = Depends(get_db
     db.refresh(db_employee)
     return Employee.model_validate(db_employee)
 
-@app.put("/employees/{employee_id}", response_model=Employee, dependencies=[Depends(get_current_user)])
+@app.put("/employees/{employee_id}", response_model=Employee)
 async def update_employee(employee_id: str, employee: EmployeeUpdate, db: Session = Depends(get_db)):
     db_employee = db.query(DBEmployee).filter(DBEmployee.id == employee_id).first()
     if not db_employee:
@@ -621,7 +537,7 @@ async def update_employee(employee_id: str, employee: EmployeeUpdate, db: Sessio
     db.refresh(db_employee)
     return Employee.model_validate(db_employee)
 
-@app.delete("/employees/{employee_id}", dependencies=[Depends(get_current_user)])
+@app.delete("/employees/{employee_id}")
 async def delete_employee(employee_id: str, db: Session = Depends(get_db)):
     employee = db.query(DBEmployee).filter(DBEmployee.id == employee_id).first()
     if not employee:
@@ -632,7 +548,7 @@ async def delete_employee(employee_id: str, db: Session = Depends(get_db)):
     return {"message": "Employee deleted"}
 
 # Patient endpoints
-@app.get("/patients", response_model=List[Patient], dependencies=[Depends(get_current_user)])
+@app.get("/patients", response_model=List[Patient])
 async def get_patients(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id and branch_id != "null" and branch_id != "undefined":
         db_patients = db.query(DBPatient).filter(DBPatient.branch_id == branch_id).all()
@@ -640,7 +556,7 @@ async def get_patients(branch_id: Optional[str] = None, db: Session = Depends(ge
         db_patients = db.query(DBPatient).all()
     return [Patient.model_validate(patient) for patient in db_patients]
 
-@app.post("/patients", response_model=Patient, dependencies=[Depends(get_current_user)])
+@app.post("/patients", response_model=Patient)
 async def create_patient(patient: PatientCreate, db: Session = Depends(get_db)):
     patient_id = str(uuid.uuid4())
     db_patient = DBPatient(
@@ -657,7 +573,7 @@ async def create_patient(patient: PatientCreate, db: Session = Depends(get_db)):
     db.refresh(db_patient)
     return Patient.model_validate(db_patient)
 
-@app.put("/patients/{patient_id}", response_model=Patient, dependencies=[Depends(get_current_user)])
+@app.put("/patients/{patient_id}", response_model=Patient)
 async def update_patient(patient_id: str, patient: PatientUpdate, db: Session = Depends(get_db)):
     db_patient = db.query(DBPatient).filter(DBPatient.id == patient_id).first()
     if not db_patient:
@@ -670,7 +586,7 @@ async def update_patient(patient_id: str, patient: PatientUpdate, db: Session = 
     db.refresh(db_patient)
     return Patient.model_validate(db_patient)
 
-@app.delete("/patients/{patient_id}", dependencies=[Depends(get_current_user)])
+@app.delete("/patients/{patient_id}")
 async def delete_patient(patient_id: str, db: Session = Depends(get_db)):
     patient = db.query(DBPatient).filter(DBPatient.id == patient_id).first()
     if not patient:
@@ -681,7 +597,7 @@ async def delete_patient(patient_id: str, db: Session = Depends(get_db)):
     return {"message": "Patient deleted"}
 
 # Transfer endpoints
-@app.get("/transfers", response_model=List[Transfer], dependencies=[Depends(get_current_user)])
+@app.get("/transfers", response_model=List[Transfer])
 async def get_transfers(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id and branch_id != "null" and branch_id != "undefined":
         db_transfers = db.query(DBTransfer).filter(DBTransfer.to_branch_id == branch_id).all()
@@ -689,7 +605,7 @@ async def get_transfers(branch_id: Optional[str] = None, db: Session = Depends(g
         db_transfers = db.query(DBTransfer).all()
     return [Transfer.model_validate(transfer) for transfer in db_transfers]
 
-@app.post("/transfers", dependencies=[Depends(get_current_user)])
+@app.post("/transfers")
 async def create_transfers(batch: BatchTransferCreate, db: Session = Depends(get_db)):
     try:
         for transfer_data in batch.transfers:
@@ -743,67 +659,47 @@ async def create_transfers(batch: BatchTransferCreate, db: Session = Depends(get
         raise HTTPException(status_code=400, detail=str(e))
 
 # Shipment endpoints
-@app.get("/shipments", dependencies=[Depends(get_current_user)])
+@app.get("/shipments")
 async def get_shipments(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id and branch_id != "null" and branch_id != "undefined":
         shipments = db.query(DBShipment).filter(DBShipment.to_branch_id == branch_id).all()
     else:
         shipments = db.query(DBShipment).all()
-
+    
     result = []
     for shipment in shipments:
+        # Get shipment items
         items = db.query(DBShipmentItem).filter(DBShipmentItem.shipment_id == shipment.id).all()
-        out_items = []
-        meds_raw = []
-        devices_raw = []
-        for it in items:
-            if it.item_type == "medicine":
-                med = db.query(DBMedicine).get(it.item_id)
-                name = med.name if med else it.item_name
-                out_items.append({
-                    "type": "medicine",
-                    "id": it.item_id,
-                    "name": name,
-                    "quantity": it.quantity,
-                })
-                meds_raw.append({
-                    "medicine_id": it.item_id,
-                    "medicine_name": name,
-                    "quantity": it.quantity,
-                })
-            else:
-                dev = db.query(DBMedicalDevice).get(it.item_id)
-                name = dev.name if dev else it.item_name
-                out_items.append({
-                    "type": "medical_device",
-                    "id": it.item_id,
-                    "name": name,
-                    "quantity": it.quantity,
-                })
-                devices_raw.append({
-                    "device_id": it.item_id,
-                    "device_name": name,
-                    "quantity": it.quantity,
-                })
-
+        
         shipment_data = {
             "id": shipment.id,
             "to_branch_id": shipment.to_branch_id,
             "status": shipment.status,
             "rejection_reason": shipment.rejection_reason,
             "created_at": shipment.created_at.isoformat(),
-            "accepted_at": shipment.accepted_at.isoformat() if shipment.accepted_at else None,
-            "items": out_items,
+            "medicines": [],
+            "medical_devices": []
         }
-        if meds_raw:
-            shipment_data["medicines"] = meds_raw
-        if devices_raw:
-            shipment_data["medical_devices"] = devices_raw
+        
+        for item in items:
+            if item.item_type == "medicine":
+                shipment_data["medicines"].append({
+                    "medicine_id": item.item_id,
+                    "name": item.item_name,
+                    "quantity": item.quantity
+                })
+            else:
+                shipment_data["medical_devices"].append({
+                    "device_id": item.item_id,
+                    "name": item.item_name,
+                    "quantity": item.quantity
+                })
+        
         result.append(shipment_data)
-
+    
     return {"data": result}
 
-@app.post("/shipments", dependencies=[Depends(get_current_user)])
+@app.post("/shipments")
 async def create_shipment(shipment_data: dict, db: Session = Depends(get_db)):
     try:
         shipment_id = str(uuid.uuid4())
@@ -876,33 +772,32 @@ async def create_shipment(shipment_data: dict, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/shipments/{shipment_id}/accept", dependencies=[Depends(get_current_user)])
+@app.post("/shipments/{shipment_id}/accept")
 async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
-    shipment = db.query(DBShipment).filter(DBShipment.id == shipment_id).first()
-    if not shipment:
-        raise HTTPException(status_code=404, detail="Shipment not found")
-    if shipment.status != "pending":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already processed")
-
     try:
+        shipment = db.query(DBShipment).filter(DBShipment.id == shipment_id).first()
+        if not shipment:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+        
+        # Get shipment items
         items = db.query(DBShipmentItem).filter(DBShipmentItem.shipment_id == shipment_id).all()
-        out_items = []
-        meds_raw = []
-        devices_raw = []
+        
         for item in items:
             if item.item_type == "medicine":
+                # Decrease main warehouse quantity
                 main_medicine = db.query(DBMedicine).filter(
                     DBMedicine.id == item.item_id,
                     DBMedicine.branch_id.is_(None)
                 ).first()
                 if main_medicine:
                     main_medicine.quantity -= item.quantity
-
+                
+                # Add to branch
                 branch_medicine = db.query(DBMedicine).filter(
                     DBMedicine.name == item.item_name,
                     DBMedicine.branch_id == shipment.to_branch_id
                 ).first()
-
+                
                 if branch_medicine:
                     branch_medicine.quantity += item.quantity
                 else:
@@ -916,33 +811,22 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
                         branch_id=shipment.to_branch_id
                     )
                     db.add(new_medicine)
-
-                name = main_medicine.name if main_medicine else item.item_name
-                out_items.append({
-                    "type": "medicine",
-                    "id": item.item_id,
-                    "name": name,
-                    "quantity": item.quantity,
-                })
-                meds_raw.append({
-                    "medicine_id": item.item_id,
-                    "medicine_name": name,
-                    "quantity": item.quantity,
-                })
-
-            else:
+            
+            elif item.item_type == "medical_device":
+                # Decrease main warehouse quantity
                 main_device = db.query(DBMedicalDevice).filter(
                     DBMedicalDevice.id == item.item_id,
                     DBMedicalDevice.branch_id.is_(None)
                 ).first()
                 if main_device:
                     main_device.quantity -= item.quantity
-
+                
+                # Add to branch
                 branch_device = db.query(DBMedicalDevice).filter(
                     DBMedicalDevice.name == item.item_name,
                     DBMedicalDevice.branch_id == shipment.to_branch_id
                 ).first()
-
+                
                 if branch_device:
                     branch_device.quantity += item.quantity
                 else:
@@ -956,40 +840,15 @@ async def accept_shipment(shipment_id: str, db: Session = Depends(get_db)):
                         branch_id=shipment.to_branch_id
                     )
                     db.add(new_device)
-
-                name = main_device.name if main_device else item.item_name
-                out_items.append({
-                    "type": "medical_device",
-                    "id": item.item_id,
-                    "name": name,
-                    "quantity": item.quantity,
-                })
-                devices_raw.append({
-                    "device_id": item.item_id,
-                    "device_name": name,
-                    "quantity": item.quantity,
-                })
-
+        
         shipment.status = "accepted"
-        shipment.accepted_at = datetime.utcnow()
         db.commit()
-
-        return {
-            "id": shipment.id,
-            "to_branch_id": shipment.to_branch_id,
-            "status": shipment.status,
-            "rejection_reason": shipment.rejection_reason,
-            "created_at": shipment.created_at.isoformat(),
-            "accepted_at": shipment.accepted_at.isoformat() if shipment.accepted_at else None,
-            "items": out_items,
-            "medicines": meds_raw or None,
-            "medical_devices": devices_raw or None,
-        }
+        return {"message": "Shipment accepted"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/shipments/{shipment_id}/reject", dependencies=[Depends(get_current_user)])
+@app.post("/shipments/{shipment_id}/reject")
 async def reject_shipment(shipment_id: str, reason: dict, db: Session = Depends(get_db)):
     shipment = db.query(DBShipment).filter(DBShipment.id == shipment_id).first()
     if not shipment:
@@ -1000,7 +859,7 @@ async def reject_shipment(shipment_id: str, reason: dict, db: Session = Depends(
     db.commit()
     return {"message": "Shipment rejected"}
 
-@app.put("/shipments/{shipment_id}/status", dependencies=[Depends(get_current_user)])
+@app.put("/shipments/{shipment_id}/status")
 async def update_shipment_status(shipment_id: str, status_data: dict, db: Session = Depends(get_db)):
     shipment = db.query(DBShipment).filter(DBShipment.id == shipment_id).first()
     if not shipment:
@@ -1011,7 +870,7 @@ async def update_shipment_status(shipment_id: str, status_data: dict, db: Sessio
     return {"message": "Shipment status updated"}
 
 # Notification endpoints
-@app.get("/notifications", dependencies=[Depends(get_current_user)])
+@app.get("/notifications")
 async def get_notifications(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id:
         notifications = db.query(DBNotification).filter(DBNotification.branch_id == branch_id).order_by(DBNotification.created_at.desc()).all()
@@ -1032,7 +891,7 @@ async def get_notifications(branch_id: Optional[str] = None, db: Session = Depen
         ]
     }
 
-@app.put("/notifications/{notification_id}/read", dependencies=[Depends(get_current_user)])
+@app.put("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, db: Session = Depends(get_db)):
     notification = db.query(DBNotification).filter(DBNotification.id == notification_id).first()
     if not notification:
@@ -1043,10 +902,7 @@ async def mark_notification_read(notification_id: str, db: Session = Depends(get
     return {"message": "Notification marked as read"}
 
 # Last receipt endpoints
-@app.get(
-    "/branches/{branch_id}/items/medicine/{medicine_id}/last_receipt",
-    dependencies=[Depends(get_current_user)],
-)
+@app.get("/branches/{branch_id}/items/medicine/{medicine_id}/last_receipt")
 async def get_last_medicine_receipt(branch_id: str, medicine_id: str, db: Session = Depends(get_db)):
     result = (
         db.query(DBShipmentItem, DBShipment)
@@ -1065,10 +921,7 @@ async def get_last_medicine_receipt(branch_id: str, medicine_id: str, db: Sessio
         return {"quantity": item.quantity, "time": shipment.created_at}
     return None
 
-@app.get(
-    "/branches/{branch_id}/items/device/{device_id}/last_receipt",
-    dependencies=[Depends(get_current_user)],
-)
+@app.get("/branches/{branch_id}/items/device/{device_id}/last_receipt")
 async def get_last_device_receipt(branch_id: str, device_id: str, db: Session = Depends(get_db)):
     result = (
         db.query(DBShipmentItem, DBShipment)
@@ -1088,7 +941,7 @@ async def get_last_device_receipt(branch_id: str, device_id: str, db: Session = 
     return None
 
 # Dispensing endpoints
-@app.get("/dispensing_records", dependencies=[Depends(get_current_user)])
+@app.get("/dispensing_records")
 async def get_dispensing_records(branch_id: Optional[str] = None, db: Session = Depends(get_db)):
     if branch_id and branch_id != "null" and branch_id != "undefined":
         records = db.query(DBDispensingRecord).filter(DBDispensingRecord.branch_id == branch_id).all()
@@ -1127,7 +980,7 @@ async def get_dispensing_records(branch_id: Optional[str] = None, db: Session = 
     
     return {"data": result}
 
-@app.post("/dispensing", dependencies=[Depends(get_current_user)])
+@app.post("/dispensing")
 async def create_dispensing_record(request: dict, db: Session = Depends(get_db)):
     try:
         patient_id = request["patient_id"]
@@ -1209,12 +1062,12 @@ async def create_dispensing_record(request: dict, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail=str(e))
 
 # Arrival endpoints
-@app.get("/arrivals", dependencies=[Depends(get_current_user)])
+@app.get("/arrivals")
 async def get_arrivals(db: Session = Depends(get_db)):
     arrivals = db.query(DBArrival).all()
     return {"data": [Arrival.model_validate(arrival) for arrival in arrivals]}
 
-@app.post("/arrivals", dependencies=[Depends(get_current_user)])
+@app.post("/arrivals")
 async def create_arrivals(batch: BatchArrivalCreate, db: Session = Depends(get_db)):
     try:
         for arrival_data in batch.arrivals:
@@ -1249,13 +1102,13 @@ async def create_arrivals(batch: BatchArrivalCreate, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/device_arrivals", dependencies=[Depends(get_current_user)])
+@app.get("/device_arrivals")
 async def get_device_arrivals(db: Session = Depends(get_db)):
     arrivals = db.query(DBDeviceArrival).all()
     return {"data": [DeviceArrival.model_validate(a) for a in arrivals]}
 
 
-@app.post("/device_arrivals", dependencies=[Depends(get_current_user)])
+@app.post("/device_arrivals")
 async def create_device_arrivals(batch: BatchDeviceArrivalCreate, db: Session = Depends(get_db)):
     try:
         for arrival_data in batch.arrivals:
@@ -1287,7 +1140,7 @@ async def create_device_arrivals(batch: BatchDeviceArrivalCreate, db: Session = 
         raise HTTPException(status_code=400, detail=str(e))
 
 # Report endpoints
-@app.post("/reports/generate", dependencies=[Depends(get_current_user)])
+@app.post("/reports/generate")
 async def generate_report(request: ReportRequest, db: Session = Depends(get_db)):
     try:
         report_data = []
@@ -1415,7 +1268,7 @@ async def generate_report(request: ReportRequest, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail=str(e))
 
 # Calendar endpoints
-@app.get("/calendar/dispensing", dependencies=[Depends(get_current_user)])
+@app.get("/calendar/dispensing")
 async def get_calendar_dispensing(branch_id: Optional[str] = None, month: Optional[int] = None, year: Optional[int] = None, db: Session = Depends(get_db)):
     try:
         query = db.query(DBDispensingRecord)

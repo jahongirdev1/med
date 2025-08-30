@@ -142,13 +142,12 @@ class MedicalDevice(Base):
 
 class Shipment(Base):
     __tablename__ = "shipments"
-
+    
     id = Column(String, primary_key=True)
     to_branch_id = Column(String, ForeignKey("branches.id"), nullable=False)
     status = Column(String, default="pending")  # pending, accepted, rejected, cancelled
     rejection_reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    accepted_at = Column(DateTime, nullable=True)
 
 class ShipmentItem(Base):
     __tablename__ = "shipment_items"

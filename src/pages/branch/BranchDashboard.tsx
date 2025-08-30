@@ -53,28 +53,11 @@ const BranchDashboard: React.FC = () => {
     return <div className="flex justify-center items-center h-64">Загрузка...</div>;
   }
 
-<<<<<<< HEAD
-  const medsArr = asArray(medicines);
-  const devsArr = asArray(devices);
-  const employeesArr = asArray(employees);
-  const patientsArr = asArray(patients);
-  const dispArr = asArray(dispensings);
-  const shipmentsArr = asArray(shipments);
-  const notificationsArr = asArray(notifications);
-
-  const totalMedicines = medsArr.reduce((sum, m) => sum + (Number(m.quantity) || 0), 0);
-  const totalDevices = devsArr.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0);
-  const totalDispensed = dispArr.reduce((sum, disp) => sum + (Number(disp.quantity) || 0), 0);
-  const hasPendingShipments = shipmentsArr.some((s) => s?.status === 'pending');
-  const hasUnreadNotifications = notificationsArr.some((n: any) => !n?.is_read);
-  const showBanner = hasPendingShipments || hasUnreadNotifications;
-=======
   const totalMedicines = medicines.reduce((sum, med) => sum + med.quantity, 0);
   const totalDevices = devices.reduce((sum, dev) => sum + dev.quantity, 0);
   const totalDispensed = dispensings.reduce((sum, disp) => sum + disp.quantity, 0);
   const hasPendingShipments = shipments.some((s) => s.status === 'pending');
   const hasUnreadNotifications = notifications.some((n: any) => !n.is_read);
->>>>>>> parent of c06331d (feat: guard array usage and add error boundary)
 
   const stats = [
     {
@@ -116,7 +99,7 @@ const BranchDashboard: React.FC = () => {
         <p className="text-gray-600 mt-2">Панель управления филиалом</p>
       </div>
 
-      {showBanner && (
+      {(hasPendingShipments || hasUnreadNotifications) && (
         <div
           className="mb-8 p-4 bg-yellow-100 text-yellow-800 rounded cursor-pointer"
           onClick={() => navigate(hasPendingShipments ? '/branch/arrivals' : '/branch/notifications')}
