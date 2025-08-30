@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NumberInput } from '@/components/NumberInput';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -26,10 +27,13 @@ const BranchMedicines: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     category_id: '',
-    purchase_price: 0,
+    purchase_price: '0',
     sell_price: 0,
-    quantity: 0
+    quantity: '0'
   });
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [selectedMedicine, setSelectedMedicine] = useState<any>(null);
+  const [lastReceipt, setLastReceipt] = useState<any>(null);
 
   useEffect(() => {
     fetchData();
@@ -59,7 +63,11 @@ const BranchMedicines: React.FC = () => {
 
     try {
       const medicineData = {
-        ...formData,
+        name: formData.name,
+        category_id: formData.category_id,
+        purchase_price: parseFloat(formData.purchase_price),
+        sell_price: formData.sell_price,
+        quantity: parseInt(formData.quantity),
         branch_id: branchId
       };
 
@@ -83,10 +91,17 @@ const BranchMedicines: React.FC = () => {
       toast({ title: 'Ошибка', description: 'Заполните все обязательные поля', variant: 'destructive' });
       return;
     }
-
     try {
-      const response = await apiService.updateMedicine(editingMedicine.id, formData);
-      
+      const updateData = {
+        name: formData.name,
+        category_id: formData.category_id,
+        purchase_price: parseFloat(formData.purchase_price),
+        sell_price: formData.sell_price,
+        quantity: parseInt(formData.quantity),
+        branch_id: branchId
+      };
+      const response = await apiService.updateMedicine(editingMedicine.id, updateData);
+
       if (!response.error) {
         toast({ title: 'Лекарство обновлено!' });
         resetForm();
@@ -122,9 +137,9 @@ const BranchMedicines: React.FC = () => {
     setFormData({
       name: '',
       category_id: '',
-      purchase_price: 0,
+      purchase_price: '0',
       sell_price: 0,
-      quantity: 0
+      quantity: '0'
     });
   };
 
@@ -133,9 +148,9 @@ const BranchMedicines: React.FC = () => {
     setFormData({
       name: medicine.name,
       category_id: medicine.category_id,
-      purchase_price: medicine.purchase_price,
+      purchase_price: medicine.purchase_price.toString(),
       sell_price: medicine.sell_price,
-      quantity: medicine.quantity
+      quantity: medicine.quantity.toString()
     });
     setEditDialogOpen(true);
   };
@@ -143,6 +158,17 @@ const BranchMedicines: React.FC = () => {
   const getCategoryName = (categoryId: string) => {
     const category = categories.find(c => c.id === categoryId);
     return category?.name || 'Неизвестная категория';
+  };
+
+  const handleRowClick = async (medicine: any) => {
+    setSelectedMedicine(medicine);
+    try {
+      const res = await apiService.getLastMedicineReceipt(branchId, medicine.id);
+      setLastReceipt(res.data);
+    } catch {
+      setLastReceipt(null);
+    }
+    setReceiptDialogOpen(true);
   };
 
   if (loading) {
@@ -198,12 +224,10 @@ const BranchMedicines: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Закупочная цена</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <NumberInput
+                    decimal
                     value={formData.purchase_price}
-                    onChange={(e) => setFormData({...formData, purchase_price: Number(e.target.value)})}
+                    onChange={(v) => setFormData({ ...formData, purchase_price: v })}
                   />
                 </div>
                 <div>
@@ -220,11 +244,9 @@ const BranchMedicines: React.FC = () => {
 
               <div>
                 <Label>Количество</Label>
-                <Input
-                  type="number"
-                  min="0"
+                <NumberInput
                   value={formData.quantity}
-                  onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
+                  onChange={(v) => setFormData({ ...formData, quantity: v })}
                 />
               </div>
               
@@ -258,7 +280,7 @@ const BranchMedicines: React.FC = () => {
               </TableHeader>
               <TableBody>
                 {medicines.map((medicine) => (
-                  <TableRow key={medicine.id}>
+                  <TableRow key={medicine.id} onClick={() => handleRowClick(medicine)} className="cursor-pointer">
                     <TableCell className="font-medium">{medicine.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{getCategoryName(medicine.category_id)}</Badge>
@@ -272,10 +294,10 @@ const BranchMedicines: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(medicine)}>
+                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); openEditDialog(medicine); }}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDelete(medicine.id)}>
+                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(medicine.id); }}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -329,12 +351,10 @@ const BranchMedicines: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Закупочная цена</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                <NumberInput
+                  decimal
                   value={formData.purchase_price}
-                  onChange={(e) => setFormData({...formData, purchase_price: Number(e.target.value)})}
+                  onChange={(v) => setFormData({ ...formData, purchase_price: v })}
                 />
               </div>
               <div>
@@ -351,11 +371,9 @@ const BranchMedicines: React.FC = () => {
 
             <div>
               <Label>Количество</Label>
-              <Input
-                type="number"
-                min="0"
+              <NumberInput
                 value={formData.quantity}
-                onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
+                onChange={(v) => setFormData({ ...formData, quantity: v })}
               />
             </div>
             
@@ -363,6 +381,22 @@ const BranchMedicines: React.FC = () => {
               Обновить лекарство
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Последнее поступление</DialogTitle>
+          </DialogHeader>
+          {lastReceipt ? (
+            <div className="space-y-2">
+              <p>Количество: {lastReceipt.quantity}</p>
+              <p>Время: {new Date(lastReceipt.time).toLocaleString()}</p>
+            </div>
+          ) : (
+            <p>Данных нет</p>
+          )}
         </DialogContent>
       </Dialog>
     </div>

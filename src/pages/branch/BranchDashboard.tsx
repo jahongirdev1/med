@@ -2,17 +2,22 @@
 import React, { useState, useEffect } from 'react';
 import { storage } from '@/utils/storage';
 import { apiService } from '@/utils/api';
-import { Package, Users, UserCheck, ArrowLeftRight } from 'lucide-react';
+import { Package, Users, UserCheck, ArrowLeftRight, Boxes } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const BranchDashboard: React.FC = () => {
   const currentUser = storage.getCurrentUser();
   const branchId = currentUser?.branchId;
   
   const [medicines, setMedicines] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [dispensings, setDispensings] = useState<any[]>([]);
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchData();
@@ -20,17 +25,23 @@ const BranchDashboard: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [medicinesRes, employeesRes, patientsRes, dispensingsRes] = await Promise.all([
+      const [medRes, devRes, empRes, patRes, dispRes, shipRes, notifRes] = await Promise.all([
         apiService.getMedicines(branchId),
+        apiService.getMedicalDevices(branchId),
         apiService.getEmployees(branchId),
         apiService.getPatients(branchId),
-        apiService.getDispensings(branchId)
+        apiService.getDispensings(branchId),
+        apiService.getShipments(branchId),
+        apiService.getNotifications(branchId!),
       ]);
 
-      if (medicinesRes.data) setMedicines(medicinesRes.data);
-      if (employeesRes.data) setEmployees(employeesRes.data);
-      if (patientsRes.data) setPatients(patientsRes.data);
-      if (dispensingsRes.data) setDispensings(dispensingsRes.data);
+      if (medRes.data) setMedicines(medRes.data);
+      if (devRes.data) setDevices(devRes.data);
+      if (empRes.data) setEmployees(empRes.data);
+      if (patRes.data) setPatients(patRes.data);
+      if (dispRes.data) setDispensings(dispRes.data);
+      if (shipRes.data) setShipments(shipRes.data);
+      if (notifRes.data) setNotifications(notifRes.data);
     } catch (error) {
       console.error('Error fetching branch data:', error);
     } finally {
@@ -42,8 +53,11 @@ const BranchDashboard: React.FC = () => {
     return <div className="flex justify-center items-center h-64">Загрузка...</div>;
   }
 
-  const totalMedicines = medicines.reduce((sum, med) => sum + med.quantity, 0);
-  const totalDispensed = dispensings.reduce((sum, disp) => sum + disp.quantity, 0);
+  const totalMedicines = medicines.reduce((sum, m) => sum + m.quantity, 0);
+  const totalDevices = devices.reduce((sum, d) => sum + d.quantity, 0);
+  const totalDispensed = dispensings.reduce((sum, d) => sum + d.quantity, 0);
+  const pendingShipments = shipments.filter((s) => s.status === 'pending').length;
+  const unreadNotifications = notifications.filter((n) => !n.is_read).length;
 
   const stats = [
     {
@@ -51,6 +65,12 @@ const BranchDashboard: React.FC = () => {
       value: totalMedicines,
       icon: Package,
       color: 'bg-blue-500'
+    },
+    {
+      title: 'ИМН в наличии',
+      value: totalDevices,
+      icon: Boxes,
+      color: 'bg-indigo-500'
     },
     {
       title: 'Сотрудники',
@@ -79,7 +99,16 @@ const BranchDashboard: React.FC = () => {
         <p className="text-gray-600 mt-2">Панель управления филиалом</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      {(pendingShipments > 0 || unreadNotifications > 0) && (
+        <div
+          className="mb-6 p-4 bg-yellow-100 text-yellow-800 rounded cursor-pointer"
+          onClick={() => navigate('/branch/arrivals')}
+        >
+          Имеются ожидающие поставки или непрочитанные уведомления
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
