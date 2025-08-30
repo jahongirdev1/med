@@ -6,9 +6,8 @@
 1. Install PostgreSQL
 2. Create database: `warehouse_db`
 3. Update DATABASE_URL in .env file
-4. If you previously installed `jose`, remove it: `pip uninstall -y jose`
-5. Install dependencies: `pip install -r requirements.txt`
-6. Run server: `python main.py`
+4. Install dependencies: `pip install -r requirements.txt`
+5. Run server: `python main.py`
 
 ## API Endpoints
 

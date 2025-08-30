@@ -1,10 +1,11 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { storage } from '@/utils/storage';
-import { apiService, ApiError } from '@/utils/api';
+import { apiService } from '@/utils/api';
 import { toast } from '@/hooks/use-toast';
 
 const Login: React.FC = () => {
@@ -18,27 +19,34 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      const resp = await apiService.login({ login, password });
+      const response = await apiService.login({ login, password });
+      
+      if (response.error) {
+        toast({ 
+          title: 'Ошибка входа', 
+          description: response.error,
+          variant: 'destructive'
+        });
+        return;
+      }
 
-      if (resp.data?.user) {
-        storage.setCurrentUser(resp.data.user);
-
-        if (resp.data.user.role === 'admin') {
+      if (response.data?.user) {
+        storage.setCurrentUser(response.data.user);
+        
+        if (response.data.user.role === 'admin') {
           navigate('/admin');
           toast({ title: 'Успешный вход в систему!' });
-        } else if (resp.data.user.role === 'branch') {
+        } else if (response.data.user.role === 'branch') {
           navigate('/branch');
-          toast({ title: `Добро пожаловать в ${resp.data.user.branch_name}!` });
+          toast({ title: `Добро пожаловать в ${response.data.user.branch_name}!` });
         }
       }
-    } catch (e: any) {
-      const msg =
-        e instanceof ApiError
-          ? e.message
-          : e?.name === 'AbortError'
-            ? 'Request timed out'
-            : 'Network error: backend unavailable';
-      toast({ title: 'Ошибка входа', description: msg, variant: 'destructive' });
+    } catch (error) {
+      toast({ 
+        title: 'Ошибка', 
+        description: 'Произошла ошибка при входе в систему',
+        variant: 'destructive'
+      });
     } finally {
       setLoading(false);
     }
@@ -79,7 +87,11 @@ const Login: React.FC = () => {
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={loading}
+          >
             {loading ? 'Вход...' : 'Войти'}
           </Button>
         </form>
@@ -94,4 +106,3 @@ const Login: React.FC = () => {
 };
 
 export default Login;
-

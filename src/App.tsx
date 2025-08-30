@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { storage } from "@/utils/storage";
 import Layout from "@/components/Layout";
-import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
 // Auth
 import Login from "@/pages/Login";
@@ -67,8 +66,7 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <AppErrorBoundary>
-            <Routes>
+          <Routes>
             <Route 
               path="/" 
               element={
@@ -114,8 +112,7 @@ const App = () => {
             <Route path="/branch/medicines" element={<ProtectedRoute requiredRole="branch"><BranchMedicines /></ProtectedRoute>} />
             
             <Route path="*" element={<NotFound />} />
-            </Routes>
-          </AppErrorBoundary>
+          </Routes>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

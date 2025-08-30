@@ -1,7 +1,7 @@
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ Base = declarative_base()
 # Database Models
 class User(Base):
     __tablename__ = "users"
-
+    
     id = Column(String, primary_key=True)
     login = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
@@ -142,13 +142,12 @@ class MedicalDevice(Base):
 
 class Shipment(Base):
     __tablename__ = "shipments"
-
+    
     id = Column(String, primary_key=True)
     to_branch_id = Column(String, ForeignKey("branches.id"), nullable=False)
     status = Column(String, default="pending")  # pending, accepted, rejected, cancelled
     rejection_reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    accepted_at = Column(DateTime, nullable=True)
 
 class ShipmentItem(Base):
     __tablename__ = "shipment_items"
@@ -169,7 +168,6 @@ class Notification(Base):
     message = Column(String, nullable=False)
     is_read = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
-
 
 # Database dependency
 def get_db():

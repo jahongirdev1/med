@@ -11,9 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { asArray } from '@/lib/asArray';
-import { fdt } from '@/lib/fdt';
 
 const Arrivals: React.FC = () => {
   const currentUser = storage.getCurrentUser();
@@ -25,11 +22,8 @@ const Arrivals: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showDetails, setShowDetails] = useState<string | null>(null);
   const [showNotifications, setShowNotifications] = useState(true);
-  const [modalData, setModalData] = useState<any | null>(null);
-  const [open, setOpen] = useState(false);
+  const [selectedShipment, setSelectedShipment] = useState<any>(null);
   const [rejectionReason, setRejectionReason] = useState('');
-
-  const qc = useQueryClient();
 
   useEffect(() => {
     fetchData();
@@ -50,24 +44,33 @@ const Arrivals: React.FC = () => {
         apiService.getShipments(branchId)
       ]);
 
+      console.log('Medicines response:', medicinesRes);
+      console.log('Transfers response:', transfersRes);
+
       if (medicinesRes && medicinesRes.data) {
-        const medicinesData = asArray(medicinesRes.data);
+        const medicinesData = Array.isArray(medicinesRes.data) ? medicinesRes.data : [];
         setMedicines(medicinesData);
+        console.log('Set medicines:', medicinesData);
       } else {
+        console.log('No medicines data');
         setMedicines([]);
       }
 
       if (transfersRes && transfersRes.data) {
-        const transfersData = asArray(transfersRes.data);
+        const transfersData = Array.isArray(transfersRes.data) ? transfersRes.data : [];
         setTransfers(transfersData);
+        console.log('Set transfers:', transfersData);
       } else {
+        console.log('No transfers data');
         setTransfers([]);
       }
 
       if (shipmentsRes && shipmentsRes.data) {
-        const shipmentsData = asArray(shipmentsRes.data);
+        const shipmentsData = Array.isArray(shipmentsRes.data) ? shipmentsRes.data : shipmentsRes.data;
         setShipments(shipmentsData);
+        console.log('Set shipments:', shipmentsData);
       } else {
+        console.log('No shipments data');
         setShipments([]);
       }
     } catch (error) {
@@ -127,35 +130,14 @@ const Arrivals: React.FC = () => {
     toast({ title: 'Данные обновлены' });
   };
 
-  const acceptMutation = useMutation({
-    mutationFn: async (shipmentId: string) => {
-      const res = await apiService.acceptShipment(shipmentId);
-      if (res.error) {
-        const err: any = new Error(res.error);
-        err.status = res.status;
-        throw err;
-      }
-      return res.data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['branch-shipments'] });
-      fetchData();
-      setOpen(false);
-      setModalData(null);
+  const handleAcceptShipment = async (shipmentId: string) => {
+    try {
+      await apiService.acceptShipment(shipmentId);
       toast({ title: 'Поступление принято' });
-    },
-    onError: (err: any) => {
-      toast({ title: err?.message || 'Ошибка при принятии', variant: 'destructive' });
-      if (err?.status === 409) {
-        setOpen(false);
-        setModalData(null);
-      }
-    },
-  });
-
-  const onAcceptClick = () => {
-    if (!modalData?.id || acceptMutation.isLoading) return;
-    acceptMutation.mutate(modalData.id);
+      fetchData();
+    } catch (error) {
+      toast({ title: 'Ошибка принятия поступления', variant: 'destructive' });
+    }
   };
 
   const handleRejectShipment = async (shipmentId: string) => {
@@ -167,8 +149,7 @@ const Arrivals: React.FC = () => {
     try {
       await apiService.rejectShipment(shipmentId, rejectionReason);
       toast({ title: 'Поступление отклонено' });
-      setOpen(false);
-      setModalData(null);
+      setSelectedShipment(null);
       setRejectionReason('');
       fetchData();
     } catch (error) {
@@ -281,44 +262,41 @@ const Arrivals: React.FC = () => {
               </Button>
             </div>
             <div className="mt-4 space-y-3">
-              {shipments.filter(s => s.status === 'pending').map((shipment) => {
-                const items = asArray(shipment.items);
-                const medCount = items.filter((i: any) => i.type === 'medicine').length;
-                const deviceCount = items.filter((i: any) => i.type === 'medical_device').length;
-                return (
-                  <div key={shipment.id} className="bg-white p-4 rounded border">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">{fdt(shipment.created_at)}</p>
-                        {medCount > 0 && (
-                          <p className="text-sm">Лекарств: {medCount} видов</p>
-                        )}
-                        {deviceCount > 0 && (
-                          <p className="text-sm">ИМН: {deviceCount} видов</p>
-                        )}
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => { setModalData(shipment); setOpen(true); }}
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          Посмотреть
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => { setModalData(shipment); setOpen(true); }}
-                          disabled={open || acceptMutation.isLoading}
-                        >
-                          <CheckCircle className="h-4 w-4 mr-1" />
-                          Принять
-                        </Button>
-                      </div>
+              {shipments.filter(s => s.status === 'pending').map((shipment) => (
+                <div key={shipment.id} className="bg-white p-4 rounded border">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">Поступление #{shipment.id}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Дата: {new Date(shipment.created_at).toLocaleDateString('ru-RU')}
+                      </p>
+                       {shipment.medicines && shipment.medicines.length > 0 && (
+                         <p className="text-sm">Лекарств: {shipment.medicines.length} видов</p>
+                       )}
+                       {shipment.medical_devices && shipment.medical_devices.length > 0 && (
+                         <p className="text-sm">ИМН: {shipment.medical_devices.length} видов</p>
+                       )}
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => setSelectedShipment(shipment)}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        Посмотреть
+                      </Button>
+                      <Button 
+                        size="sm"
+                        onClick={() => handleAcceptShipment(shipment.id)}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Принять
+                      </Button>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -476,28 +454,46 @@ const Arrivals: React.FC = () => {
       </div>
 
       {/* Диалог просмотра поступления */}
-      <Dialog open={open} onOpenChange={(o) => { if (!o) { setOpen(false); setModalData(null); } }}>
-        {modalData && (
+      {selectedShipment && (
+        <Dialog open={!!selectedShipment} onOpenChange={() => setSelectedShipment(null)}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Поступление</DialogTitle>
+              <DialogTitle>Поступление #{selectedShipment.id}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <p className="text-sm text-muted-foreground">{fdt(modalData.created_at)}</p>
+                <p className="text-sm text-muted-foreground">
+                  Дата отправки: {new Date(selectedShipment.created_at).toLocaleDateString('ru-RU')}
+                </p>
               </div>
-
-              <div>
-                <h4 className="font-medium mb-2">Состав:</h4>
-                <div className="space-y-2">
-                  {asArray(modalData.items).map((it: any) => (
-                    <div key={`${it.type}-${it.id}`} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                      <span>{it.name}</span>
-                      <Badge variant="outline">{it.quantity} шт.</Badge>
-                    </div>
-                  ))}
+              
+              {selectedShipment.medicines && selectedShipment.medicines.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Лекарства:</h4>
+                  <div className="space-y-2">
+                    {selectedShipment.medicines.map((item: any, index: number) => (
+                      <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                        <span>{item.medicine_name || `Лекарство #${item.medicine_id}`}</span>
+                        <Badge variant="outline">{item.quantity} шт.</Badge>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {selectedShipment.medical_devices && selectedShipment.medical_devices.length > 0 && (
+                 <div>
+                   <h4 className="font-medium mb-2">ИМН:</h4>
+                   <div className="space-y-2">
+                     {selectedShipment.medical_devices.map((item: any, index: number) => (
+                       <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                         <span>{item.device_name || `ИМН #${item.device_id}`}</span>
+                         <Badge variant="outline">{item.quantity} шт.</Badge>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               )}
 
               <div>
                 <Label htmlFor="rejection-reason">Причина отклонения (если отклоняете)</Label>
@@ -510,23 +506,23 @@ const Arrivals: React.FC = () => {
               </div>
 
               <div className="flex justify-end space-x-2">
-                <Button
-                  variant="outline"
-                  onClick={() => modalData && handleRejectShipment(modalData.id)}
-                  disabled={!rejectionReason.trim() || acceptMutation.isLoading}
+                <Button 
+                  variant="outline" 
+                  onClick={() => handleRejectShipment(selectedShipment.id)}
+                  disabled={!rejectionReason.trim()}
                 >
                   <X className="h-4 w-4 mr-2" />
                   Отклонить
                 </Button>
-                <Button onClick={onAcceptClick} disabled={acceptMutation.isLoading}>
+                <Button onClick={() => handleAcceptShipment(selectedShipment.id)}>
                   <Check className="h-4 w-4 mr-2" />
-                  {acceptMutation.isLoading ? 'Принятие…' : 'Принять'}
+                  Принять
                 </Button>
               </div>
             </div>
           </DialogContent>
-        )}
-      </Dialog>
+        </Dialog>
+      )}
     </div>
   );
 };

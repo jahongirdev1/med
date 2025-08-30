@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { storage } from '@/utils/storage';
 import { apiService } from '@/utils/api';
-import { asArray } from '@/lib/asArray';
 import { Calendar as CalendarIcon, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,9 +20,6 @@ const Calendar: React.FC = () => {
   const [dayDetails, setDayDetails] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const patientsArr = asArray(patients);
-  const dayDetailsArr = asArray(dayDetails);
-
   useEffect(() => {
     fetchData();
   }, [branchId]);
@@ -37,7 +33,7 @@ const Calendar: React.FC = () => {
     
     try {
       const patientsRes = await apiService.getPatients(branchId);
-      setPatients(asArray(patientsRes?.data));
+      setPatients(patientsRes?.data || []);
     } catch (error) {
       toast({ title: 'Ошибка загрузки данных', variant: 'destructive' });
     } finally {
@@ -86,7 +82,7 @@ const Calendar: React.FC = () => {
   const handleDayClick = (day: number) => {
     if (hasDispensings(day)) {
       setSelectedDay(day);
-      setDayDetails(asArray(dispensingData[day]));
+      setDayDetails(dispensingData[day] || []);
     }
   };
 
@@ -142,7 +138,7 @@ const Calendar: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Все пациенты</SelectItem>
-                  {patientsArr.map((patient) => (
+                  {patients.map((patient) => (
                     <SelectItem key={patient.id} value={patient.id}>
                       {patient.first_name || patient.firstName} {patient.last_name || patient.lastName}
                     </SelectItem>
@@ -225,7 +221,7 @@ const Calendar: React.FC = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {dayDetailsArr.map((detail, index) => (
+            {dayDetails.map((detail, index) => (
               <div key={index} className="border rounded p-3">
                 <div className="font-medium">
                   {detail.patientName}
@@ -235,7 +231,7 @@ const Calendar: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">Выдано:</div>
-                  {asArray(detail.items).map((item: any, i: number) => (
+                  {detail.items.map((item: any, i: number) => (
                     <div key={i} className="text-sm text-muted-foreground ml-2">
                       • {item.name}: {item.quantity} {item.unit || 'шт'}
                     </div>

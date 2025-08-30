@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiService } from '@/utils/api';
-import { asArray } from '@/lib/asArray';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,12 +48,12 @@ const AdminReports: React.FC = () => {
         apiService.getPatients(),
       ]);
 
-      if (branchesRes.data) setBranches(asArray(branchesRes.data));
-      if (medicinesRes.data) setMedicines(asArray(medicinesRes.data));
-      if (transfersRes.data) setTransfers(asArray(transfersRes.data));
-      if (dispensingsRes.data) setDispensings(asArray(dispensingsRes.data));
-      if (employeesRes.data) setEmployees(asArray(employeesRes.data));
-      if (patientsRes.data) setPatients(asArray(patientsRes.data));
+      if (branchesRes.data) setBranches(branchesRes.data);
+      if (medicinesRes.data) setMedicines(medicinesRes.data);
+      if (transfersRes.data) setTransfers(transfersRes.data);
+      if (dispensingsRes.data) setDispensings(dispensingsRes.data);
+      if (employeesRes.data) setEmployees(employeesRes.data);
+      if (patientsRes.data) setPatients(patientsRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -66,19 +65,12 @@ const AdminReports: React.FC = () => {
     return <div className="flex justify-center items-center h-64">Загрузка...</div>;
   }
 
-  const branchesArr = asArray(branches);
-  const medicinesArr = asArray(medicines);
-  const transfersArr = asArray(transfers);
-  const dispensingsArr = asArray(dispensings);
-  const employeesArr = asArray(employees);
-  const patientsArr = asArray(patients);
-
-  const mainWarehouseMedicines = medicinesArr.filter(m => !m.branch_id);
-  const totalMedicinesInStock = mainWarehouseMedicines.reduce((sum, med) => sum + (Number(med.quantity) || 0), 0);
-  const totalTransferred = transfersArr.reduce((sum, transfer) => sum + (Number(transfer.quantity) || 0), 0);
+  const mainWarehouseMedicines = medicines.filter(m => !m.branch_id);
+  const totalMedicinesInStock = mainWarehouseMedicines.reduce((sum, med) => sum + med.quantity, 0);
+  const totalTransferred = transfers.reduce((sum, transfer) => sum + transfer.quantity, 0);
 
   const getFilteredTransfers = () => {
-    let filtered = transfersArr;
+    let filtered = transfers;
     
     if (selectedBranch && selectedBranch !== 'all') {
       filtered = filtered.filter(t => t.to_branch_id === selectedBranch);
@@ -96,7 +88,7 @@ const AdminReports: React.FC = () => {
   };
 
   const getFilteredDispensings = () => {
-    let filtered = dispensingsArr;
+    let filtered = dispensings;
     
     if (selectedBranch && selectedBranch !== 'all') {
       filtered = filtered.filter(d => d.branch_id === selectedBranch);
@@ -116,11 +108,11 @@ const AdminReports: React.FC = () => {
   const getBranchData = () => {
     if (!selectedBranch || selectedBranch === 'all') return null;
     
-    const branch = branchesArr.find(b => b.id === selectedBranch);
-    const branchPatients = patientsArr.filter(p => p.branch_id === selectedBranch);
-    const branchEmployees = employeesArr.filter(e => e.branch_id === selectedBranch);
-    const branchTransfers = transfersArr.filter(t => t.to_branch_id === selectedBranch);
-    const branchDispensings = dispensingsArr.filter(d => d.branch_id === selectedBranch);
+    const branch = branches.find(b => b.id === selectedBranch);
+    const branchPatients = patients.filter(p => p.branch_id === selectedBranch);
+    const branchEmployees = employees.filter(e => e.branch_id === selectedBranch);
+    const branchTransfers = transfers.filter(t => t.to_branch_id === selectedBranch);
+    const branchDispensings = dispensings.filter(d => d.branch_id === selectedBranch);
     
     return {
       branch,
@@ -157,10 +149,10 @@ const AdminReports: React.FC = () => {
 
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold mb-4">Последние отправки</h3>
-        {transfersArr.length > 0 ? (
+        {transfers.length > 0 ? (
           <div className="space-y-3">
-            {transfersArr.slice(-5).map((transfer) => {
-              const branch = branchesArr.find(b => b.id === transfer.to_branch_id);
+            {transfers.slice(-5).map((transfer) => {
+              const branch = branches.find(b => b.id === transfer.to_branch_id);
               return (
                 <div key={transfer.id} className="p-3 bg-gray-50 rounded">
                   <div className="flex justify-between items-start">
@@ -204,7 +196,7 @@ const AdminReports: React.FC = () => {
               </thead>
               <tbody>
                 {filteredTransfers.map((transfer) => {
-                  const branch = branchesArr.find(b => b.id === transfer.to_branch_id);
+                  const branch = branches.find(b => b.id === transfer.to_branch_id);
                   return (
                     <tr key={transfer.id} className="border-b">
                       <td className="py-2">{format(new Date(transfer.date), 'dd.MM.yyyy HH:mm', { locale: ru })}</td>
@@ -243,7 +235,7 @@ const AdminReports: React.FC = () => {
               </thead>
               <tbody>
                 {filteredDispensings.map((dispensing) => {
-                  const branch = branchesArr.find(b => b.id === dispensing.branch_id);
+                  const branch = branches.find(b => b.id === dispensing.branch_id);
                   return (
                     <tr key={dispensing.id} className="border-b">
                       <td className="py-2">{format(new Date(dispensing.date), 'dd.MM.yyyy HH:mm', { locale: ru })}</td>
@@ -270,37 +262,33 @@ const AdminReports: React.FC = () => {
       return <p className="text-gray-500">Выберите филиал для просмотра отчета</p>;
     }
 
-    const patients = asArray(branchData.patients);
-    const transfers = asArray(branchData.transfers);
-    const dispensings = asArray(branchData.dispensings);
-
     return (
       <div className="space-y-6">
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Отчет по филиалу: {branchData.branch?.name}</h3>
-
+          
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-blue-50 p-4 rounded">
               <p className="text-sm text-gray-600">Пациенты</p>
-              <p className="text-2xl font-bold text-blue-600">{patients.length}</p>
+              <p className="text-2xl font-bold text-blue-600">{branchData.patients.length}</p>
             </div>
             <div className="bg-green-50 p-4 rounded">
               <p className="text-sm text-gray-600">Получено лекарств</p>
               <p className="text-2xl font-bold text-green-600">
-                {transfers.reduce((sum, t) => sum + (Number(t.quantity) || 0), 0)} шт.
+                {branchData.transfers.reduce((sum, t) => sum + t.quantity, 0)} шт.
               </p>
             </div>
             <div className="bg-yellow-50 p-4 rounded">
               <p className="text-sm text-gray-600">Выдано пациентам</p>
               <p className="text-2xl font-bold text-yellow-600">
-                {dispensings.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0)} шт.
+                {branchData.dispensings.reduce((sum, d) => sum + d.quantity, 0)} шт.
               </p>
             </div>
           </div>
 
           <div className="space-y-4">
             <h4 className="font-semibold">Последние выдачи:</h4>
-            {dispensings.slice(-5).map((dispensing) => (
+            {branchData.dispensings.slice(-5).map((dispensing) => (
               <div key={dispensing.id} className="p-3 bg-gray-50 rounded">
                 <div className="flex justify-between">
                   <div>
@@ -355,7 +343,7 @@ const AdminReports: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Все филиалы</SelectItem>
-                  {branchesArr.map((branch) => (
+                  {branches.map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
                       {branch.name}
                     </SelectItem>

@@ -9,10 +9,8 @@ class UserBase(BaseModel):
     role: str
     branch_name: Optional[str] = None
 
-
 class UserCreate(UserBase):
     password: str
-
 
 class UserUpdate(BaseModel):
     login: Optional[str] = None
@@ -20,26 +18,14 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     branch_name: Optional[str] = None
 
-
 class User(UserBase):
     id: str
-    password: str
-
-    @classmethod
-    def model_validate(cls, obj):
-        return cls.model_construct(
-            id=obj.id,
-            login=obj.login,
-            password=obj.password,
-            role=obj.role,
-            branch_name=getattr(obj, "branch_name", None),
-        )
-
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class UserLogin(BaseModel):
     login: str
     password: str
-
 
 class LoginResponse(BaseModel):
     user: User
@@ -285,22 +271,15 @@ class ShipmentBase(BaseModel):
 class ShipmentCreate(ShipmentBase):
     pass
 
-class ShipmentItem(BaseModel):
-    type: str
-    id: str
-    name: str
-    quantity: int
-
-
 class Shipment(BaseModel):
     id: str
     to_branch_id: str
     status: str
     rejection_reason: Optional[str] = None
     created_at: str
-    accepted_at: Optional[str] = None
-    items: List[ShipmentItem] = []
-
+    medicines: Optional[List[dict]] = []
+    medical_devices: Optional[List[dict]] = []
+    
     model_config = ConfigDict(from_attributes=True)
 
 class ShipmentRejection(BaseModel):
