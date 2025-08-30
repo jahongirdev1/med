@@ -27,20 +27,24 @@ class LoginOut(BaseModel):
 class UserBase(BaseModel):
     login: str
     role: str
-    branch_name: Optional[str] = None
+    branch_id: Optional[str] = None
+
 
 class UserCreate(UserBase):
     password: str
+
 
 class UserUpdate(BaseModel):
     login: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
-    branch_name: Optional[str] = None
+    branch_id: Optional[str] = None
+
 
 class User(UserBase):
     id: str
-    
+    is_active: bool = True
+
     model_config = ConfigDict(from_attributes=True)
 
 # Branch schemas
