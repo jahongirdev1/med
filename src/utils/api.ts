@@ -316,15 +316,6 @@ class ApiService {
     });
   }
 
-  // Last receipt
-  async getLastReceiptMedicine(branchId: string, medicineId: string) {
-    return this.request<any>(`/branches/${encodeURIComponent(branchId)}/items/medicine/${medicineId}/last_receipt`);
-  }
-
-  async getLastReceiptDevice(branchId: string, deviceId: string) {
-    return this.request<any>(`/branches/${encodeURIComponent(branchId)}/items/device/${deviceId}/last_receipt`);
-  }
-
   // Notifications
   async getNotifications(branchId: string) {
     return this.request<any[]>(`/notifications?branch_id=${branchId}`);
