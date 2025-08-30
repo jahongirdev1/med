@@ -271,15 +271,22 @@ class ShipmentBase(BaseModel):
 class ShipmentCreate(ShipmentBase):
     pass
 
+class ShipmentItem(BaseModel):
+    type: str
+    id: str
+    name: str
+    quantity: int
+
+
 class Shipment(BaseModel):
     id: str
     to_branch_id: str
     status: str
     rejection_reason: Optional[str] = None
     created_at: str
-    medicines: Optional[List[dict]] = []
-    medical_devices: Optional[List[dict]] = []
-    
+    accepted_at: Optional[str] = None
+    items: List[ShipmentItem] = []
+
     model_config = ConfigDict(from_attributes=True)
 
 class ShipmentRejection(BaseModel):
