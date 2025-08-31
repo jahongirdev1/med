@@ -3,12 +3,30 @@
 
 ## Setup
 
-1. Install PostgreSQL
-2. Create database: `warehouse_db`
-3. Update DATABASE_URL in .env file
-4. If you previously installed `jose`, remove it: `pip uninstall -y jose`
-5. Install dependencies: `pip install -r requirements.txt`
-6. Run server: `python main.py`
+1. Install PostgreSQL and create the `clinic_bot` database.
+2. Optionally create a `.env` file with `DATABASE_URL` if you don't want the default
+   `postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/clinic_bot`.
+3. Install Python dependencies: `pip install -r requirements.txt`.
+4. Start the API with Uvicorn:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Quick start on Windows (PowerShell)
+
+```powershell
+cd backend
+python -m venv .venv
+\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# set DB url if needed (or create .env with DATABASE_URL=...)
+# $env:DATABASE_URL="postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/clinic_bot"
+
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Then login from frontend with: admin / admin
+```
 
 ## API Endpoints
 

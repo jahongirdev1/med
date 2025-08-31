@@ -174,13 +174,18 @@ def startup_event():
         try:
             ensure_medicines_category_fk()
         except Exception:
-            pass
+            db.rollback()
         try:
             ensure_schema_patches()
         except Exception:
-            pass
+            db.rollback()
     finally:
         db.close()
+
+
+@app.get("/ping")
+def ping():
+    return {"pong": True}
 
 # Auth endpoints
 @app.post("/auth/login", response_model=LoginResponse)

@@ -6,10 +6,15 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
+# Load environment variables from .env if present
 load_dotenv()
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123@localhost:5432/clinic_bot")
+# Use DATABASE_URL from environment or fallback to local Postgres
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/clinic_bot",
+)
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
